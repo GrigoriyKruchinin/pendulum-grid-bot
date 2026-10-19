@@ -236,3 +236,9 @@ data/
 *.csv.gz
 # Generated reports scratch
 reports/tmp/
+
+# Generated backtest reports (summaries go to docs/reports/*.md)
+docs/reports/backtests/*
+!docs/reports/backtests/.gitkeep
+docs/reports/walk-forward/*
+!docs/reports/walk-forward/.gitkeep

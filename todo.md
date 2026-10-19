@@ -68,12 +68,12 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] Property tests (monotonic levels, filters respected, no negative balances)
 
 ### 1.8 Fill simulator & backtester
-- [ ] Conservative fill simulator: cross-not-touch, worst-case intra-candle sequence, maker fee per fill,
-      taker fee + slippage for market exits, fee-in-base-coin option; assumptions documented in `docs/`
-- [ ] `SimulatedOrderGateway` implementing `IOrderGateway`
-- [ ] Backtester: realized, unrealized, net return, annualized, max drawdown, cycles/day, fee share,
+- [x] Conservative fill simulator: cross-not-touch, worst-case intra-candle sequence, maker fee per fill,
+      taker fee + slippage for market exits, fee-in-base-coin option; assumptions documented in `docs/fill-model.md`
+- [x] `VirtualOrderGateway` implementing `IOrderGateway` (shared by backtest and paper)
+- [x] Backtester: realized, unrealized, net return, annualized, max drawdown, cycles/day, fee share,
       time in range, range exits, buy & hold comparison
-- [ ] Results persisted with parameters and git SHA; CLI + markdown report output
+- [x] Results persisted with parameters and git SHA; CLI + markdown report output
 
 ### 1.9 Walk-forward parameter search
 - [ ] Parameter grid (levels, range width, grid type, exit policy)

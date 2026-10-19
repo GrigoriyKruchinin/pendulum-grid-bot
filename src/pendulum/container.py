@@ -6,7 +6,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from pendulum.config.settings import DatabaseSettings, ExchangeSettings, get_app_settings
+from pendulum.backtest.service import BacktestService
+from pendulum.config.settings import BacktestSettings, DatabaseSettings, ExchangeSettings, get_app_settings
 from pendulum.exchanges.base import BaseExchangeAdapter
 from pendulum.exchanges.registry import default_registry
 from pendulum.logging import configure_logging
@@ -37,6 +38,11 @@ class Container:
     def loader(self) -> HistoryLoader:
         """History loader bound to the active exchange."""
         return HistoryLoader(self.adapter, self.candles, self.instruments)
+
+    @property
+    def backtest_service(self) -> BacktestService:
+        """Backtest service bound to the active exchange."""
+        return BacktestService(self.adapter, self.candles, self.backtests, self.loader, BacktestSettings())
 
 
 def setup_logging() -> None:

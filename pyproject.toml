@@ -59,6 +59,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "PLR0915", "PLR0917", "S105", "S106", "PT018"]
 "src/pendulum/storage/migrations/**" = ["N999"]
+"src/pendulum/cli/**" = ["PLR0917"]  # typer commands map CLI options to parameters
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 "decimal.Decimal.from_float".msg = "Construct Decimal from str, never from float."

@@ -157,3 +157,12 @@ class FakeAdapter(BaseExchangeAdapter):
 
     async def aclose(self) -> None:
         return None
+
+
+class InMemoryRunStore:
+    def __init__(self) -> None:
+        self.runs: list[dict[str, object]] = []
+
+    async def save_run(self, **kwargs: object) -> int:
+        self.runs.append(kwargs)
+        return len(self.runs)
