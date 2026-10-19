@@ -101,12 +101,12 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] `docker compose config` validated; full stack built and verified healthy end to end
 
 ### 1.14 Go / No-Go
-- [ ] Go/No-Go criteria (agreed 2026-10-19):
+- [x] Go/No-Go criteria (agreed 2026-10-19):
   - net return after fees positive in **≥ 60%** of out-of-sample windows;
   - mean OOS annualized return **> buy & hold** and **≥ 15%/year** with max drawdown **≤ 20%**;
   - paper trading **≥ 14 days** diverges from backtest of the same period by **≤ 20%**;
   - not carried by 1–2 lucky windows or pairs.
-- [ ] `docs/reports/stage-1-go-no-go.md` (metrics, best pairs/params, risks, recommendation)
+- [ ] `docs/reports/stage-1-go-no-go.md` (metrics, best pairs/params, risks, recommendation) (preliminary: backtest part done 2026-10-19, all 6 backtest criteria fail; paper part pending)
 - [ ] `/audit-risks` passed (first run 2026-10-19: FIX BEFORE RELEASE → findings fixed, re-audit before tag; see `docs/reports/audits/2026-10-19-stage-1-mvp.md`)
   - [x] H1 chained OOS drawdown
   - [x] M1 intra-bar drawdown at candle low
