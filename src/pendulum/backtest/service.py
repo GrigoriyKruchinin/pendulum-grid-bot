@@ -6,13 +6,15 @@ import asyncio
 import os
 import shutil
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from pendulum.backtest.engine import BacktestResult, GridParams, SimulationConfig, run_backtest
-from pendulum.backtest.report import single_report
+from pendulum.backtest.report import single_report, walk_forward_report
 from pendulum.backtest.resample import count_missing, resample
+from pendulum.backtest.walk_forward import WalkForwardConfig, WalkForwardResult, run_walk_forward
 from pendulum.config.settings import BacktestSettings
 from pendulum.domain.models import Candle, FeeModel, Instrument, Symbol, Timeframe
 from pendulum.domain.ports import IBacktestRunStore, ICandleStore
@@ -22,6 +24,7 @@ from pendulum.market_data.loader import HistoryLoader
 
 log = get_logger(__name__)
 REPORTS_DIR = Path("docs/reports/backtests")
+WF_REPORTS_DIR = Path("docs/reports/walk-forward")
 MAX_MISSING_SHARE = 0.01  # refuse to simulate on data with >1% missing bars
 
 
@@ -113,3 +116,70 @@ class BacktestService:
             await asyncio.to_thread(path.write_text, report, encoding="utf-8")
         log.info("backtest_done", run_id=run_id, symbol=str(symbol), net_return=str(result.net_return))
         return run_id, result, path
+
+    async def walk_forward(
+        self,
+        symbol: Symbol,
+        start: datetime,
+        end: datetime,
+        *,
+        config: SimulationConfig,
+        wf: WalkForwardConfig,
+        grid: Sequence[GridParams],
+        workers: int | None = None,
+    ) -> tuple[WalkForwardResult, Path]:
+        """Run walk-forward, persist parent + per-window best train/test runs, write a report."""
+        instrument = await self.loader.resolve(symbol)
+        candles = await self.load_candles(symbol, start, end, config.timeframe)
+        result = await run_walk_forward(candles, instrument, config, wf, grid, workers=workers)
+        sha = git_sha()
+        assumptions = config.assumptions()
+        parent = await self.runs.save_run(
+            kind="walk_forward",
+            git_sha=sha,
+            exchange=self.adapter.exchange_id,
+            symbol=str(symbol),
+            timeframe=config.timeframe,
+            period_start=candles[0].open_time,
+            period_end=end,
+            params={
+                "train_days": wf.train_days,
+                "test_days": wf.test_days,
+                "grid_size": len(grid),
+                "max_train_drawdown": str(wf.max_train_drawdown),
+            },
+            metrics={
+                "windows": len(result.windows),
+                "positive_share": str(result.positive_share),
+                "oos_compound_return": str(result.oos_compound_return),
+                "oos_annualized": str(result.oos_annualized),
+                "buy_hold_compound_return": str(result.buy_hold_compound_return),
+                "max_oos_drawdown": str(result.max_oos_drawdown),
+                "top2_concentration": str(result.top2_profit_concentration),
+            },
+            assumptions=assumptions,
+        )
+        for w in result.windows:
+            for kind, r in (("wf_train", w.train), ("wf_test", w.test)):
+                if r is None:
+                    continue
+                await self.runs.save_run(
+                    kind=kind,
+                    git_sha=sha,
+                    exchange=self.adapter.exchange_id,
+                    symbol=str(symbol),
+                    timeframe=config.timeframe,
+                    period_start=r.start,
+                    period_end=r.end,
+                    params=r.params.to_dict(),
+                    metrics=r.metrics(),
+                    assumptions=assumptions,
+                    parent_id=parent,
+                )
+        await asyncio.to_thread(WF_REPORTS_DIR.mkdir, parents=True, exist_ok=True)
+        stamp = datetime.now(UTC).strftime("%Y-%m-%d")
+        path = WF_REPORTS_DIR / f"{stamp}-{symbol.base}{symbol.quote}-wf{parent}.md"
+        report = walk_forward_report(result, assumptions, sha, len(grid), wf)
+        await asyncio.to_thread(path.write_text, report, encoding="utf-8")
+        log.info("walk_forward_done", run_id=parent, symbol=str(symbol), windows=len(result.windows))
+        return result, path

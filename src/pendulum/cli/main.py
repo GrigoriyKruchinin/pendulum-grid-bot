@@ -10,8 +10,11 @@ from typing import Annotated, Any
 
 import typer
 
+from pendulum.backtest.criteria import evaluate_backtest_criteria
 from pendulum.backtest.engine import GridParams, SimulationConfig
 from pendulum.backtest.report import pct
+from pendulum.backtest.service import DataQualityError
+from pendulum.backtest.walk_forward import WalkForwardConfig, default_param_grid, quick_param_grid
 from pendulum.config.settings import BacktestSettings, GridType, RiskSettings
 from pendulum.container import build_container, setup_logging
 from pendulum.domain.models import Symbol, Timeframe
@@ -130,6 +133,58 @@ def backtest_run(
                 f"b&h={pct(r.buy_hold_return)} maxDD={pct(r.max_drawdown)} cycles/day={r.cycles_per_day:.2f} "
                 f"in_range={pct(r.time_in_range)} report={path}"
             )
+
+    run(_main())
+
+
+@backtest_app.command("walk-forward")
+def backtest_walk_forward(
+    pairs: PairsOpt,
+    since: SinceOpt,
+    until: UntilOpt = None,
+    tf: Annotated[Timeframe, typer.Option("--tf", help="Simulation timeframe")] = Timeframe.M5,
+    train_days: Annotated[int, typer.Option(help="Train window length")] = 60,
+    test_days: Annotated[int, typer.Option(help="Test window length (also the step)")] = 14,
+    quick: Annotated[bool, typer.Option(help="Use the small 12-set parameter grid")] = False,
+    workers: Annotated[int | None, typer.Option(help="Parallel processes (default: CPUs - 1)")] = None,
+    capital: Annotated[str | None, typer.Option(help="Quote capital (default: per-pair risk cap)")] = None,
+) -> None:
+    """Walk-forward optimisation per pair, then the Go/No-Go backtest criteria across all pairs."""
+
+    async def _main() -> None:
+        async with build_container() as c:
+            svc = c.backtest_service
+            bt = BacktestSettings()
+            wf = WalkForwardConfig(train_days=train_days, test_days=test_days)
+            grid = quick_param_grid() if quick else default_param_grid()
+            end = parse_date(until) if until else datetime.now(UTC)
+            results = []
+            for symbol in parse_pairs(pairs):
+                instrument = await c.loader.resolve(symbol)
+                config = SimulationConfig(
+                    capital=Decimal(capital) if capital else RiskSettings().max_pair_capital_usd,
+                    fees=await svc.fee_model(instrument),
+                    slippage_bps=bt.slippage_bps,
+                    timeframe=tf,
+                )
+                try:
+                    r, path = await svc.walk_forward(
+                        symbol, parse_date(since), end, config=config, wf=wf, grid=grid, workers=workers
+                    )
+                except DataQualityError as exc:
+                    typer.echo(f"{symbol}: skipped: {exc}")
+                    continue
+                results.append(r)
+                typer.echo(
+                    f"{symbol}: windows={len(r.windows)} positive={pct(r.positive_share)} "
+                    f"oos={pct(r.oos_compound_return)} (annual {pct(r.oos_annualized)}) "
+                    f"b&h={pct(r.buy_hold_compound_return)} maxDD={pct(r.max_oos_drawdown)} report={path}"
+                )
+            if results:
+                typer.echo("\nGo/No-Go (backtest part):")
+                for check in evaluate_backtest_criteria(results):
+                    mark = "PASS" if check.passed else "FAIL"
+                    typer.echo(f"  [{mark}] {check.name}: {check.value} (need {check.threshold})")
 
     run(_main())
 

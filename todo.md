@@ -76,9 +76,9 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] Results persisted with parameters and git SHA; CLI + markdown report output
 
 ### 1.9 Walk-forward parameter search
-- [ ] Parameter grid (levels, range width, grid type, exit policy)
-- [ ] Walk-forward: optimize on train window, evaluate on next unseen window; aggregate OOS metrics
-- [ ] Robustness checks: share of positive OOS windows, per-pair/per-window concentration
+- [x] Parameter grid (levels, range width, grid type, exit policy): 96-set default, 12-set quick
+- [x] Walk-forward: optimize on train window, evaluate on next unseen window; aggregate OOS metrics
+- [x] Robustness checks: share of positive OOS windows, per-pair/per-window concentration
 
 ### 1.10 Pair scanner
 - [ ] Score pairs: volatility, range-boundness (e.g. ADX / efficiency ratio), 24h volume ≥ threshold, spread,

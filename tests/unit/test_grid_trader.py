@@ -94,3 +94,13 @@ async def test_rebuild_rebalances_inventory() -> None:
     assert all(side is Side.BUY for price, side in sides if price < 130)
     assert all(side is Side.SELL for price, side in sides if price > 130)
     assert ex.balances.quote >= 0
+
+
+async def test_buy_shrinks_to_affordable_quote() -> None:
+    trader, ex, _, _ = await _setup()
+    await trader.cancel_all()
+    ex.balances.quote -= Decimal(5)  # simulate quote lost to rebalancing costs
+    for slot in trader.slots:
+        await trader._place(slot, T0)
+    assert all(s.order_id is not None for s in trader.slots)
+    assert ex.balances.quote >= 0

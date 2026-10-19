@@ -105,6 +105,11 @@ class GridTrader:
     async def _place(self, slot: Slot, now: datetime) -> None:
         if slot.holding is Holding.QUOTE:
             side, price, qty = Side.BUY, slot.buy_price, slot.target_qty
+            # Market rebalancing (fees, slippage) can leave slightly less quote than planned:
+            # shrink the order to what is affordable instead of leaving the slot idle.
+            free_quote = (await self.gateway.get_balances()).quote
+            if qty * price > free_quote:
+                qty = self.filters.round_qty(free_quote / price)
         else:
             side, price, qty = Side.SELL, slot.sell_price, self.filters.round_qty(slot.base_qty)
         if not self.filters.is_valid_order(price, qty):
