@@ -26,7 +26,7 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] ruff + mypy strict + pytest/pytest-asyncio/hypothesis config
 - [x] `Makefile` (install, lint, format, typecheck, test, check, up, down, migrate, data-load, backtest)
 - [x] Structured logging with secret redaction
-- [ ] Multi-stage `Dockerfile` (non-root user, uv cache) (written; build verified in 1.13)
+- [x] Multi-stage `Dockerfile` (non-root user, uv cache)
 
 ### 1.2 Configuration
 - [x] Modular Pydantic Settings: `AppSettings`, `DatabaseSettings`, `RedisSettings`, `ExchangeSettings`,
@@ -42,7 +42,7 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 ### 1.4 Storage
 - [x] SQLAlchemy async models: candles, symbols/filters, grid states, orders, fills, cycles, equity curve,
       backtest runs (params + git SHA + metrics), paper sessions, scanner scores
-- [ ] Alembic setup + initial migration; migrations run in a dedicated one-shot container (migration done + `alembic check` clean; container in 1.13)
+- [x] Alembic setup + initial migration; migrations run in a dedicated one-shot container
 - [x] Repositories (narrow interfaces) + integration tests
 
 ### 1.5 Exchange layer (multi-exchange ready)
@@ -57,7 +57,7 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 ### 1.6 Market data collector
 - [x] Historical candle loader (1m/5m) with checkpoints, resume, idempotent upserts
 - [x] Gap detection + backfill; data-quality report
-- [ ] Celery task for periodic incremental sync (task + beat written; verified in compose in 1.13)
+- [x] Celery task for periodic incremental sync
 - [x] CLI: `pendulum data load --pairs ... --tf 1m --since ...`
 
 ### 1.7 Grid engine
@@ -83,7 +83,7 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 ### 1.10 Pair scanner
 - [x] Score pairs: volatility, range-boundness (daily efficiency ratio), drift, 24h volume ≥ threshold, spread,
       fee-to-range ratio, tick granularity; risky (innovation/ST) tokens excluded
-- [ ] Weekly Celery beat recalculation; results stored (task + DB done; beat verified in compose in 1.13)
+- [x] Weekly Celery beat recalculation; results stored
 
 ### 1.11 Paper trader
 - [x] Paper sessions on live WS trades via `VirtualOrderGateway` (same fill rules), resume after restart, candle backfill of stream gaps
@@ -95,10 +95,10 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] Rate-limited sender, retries, no secrets in messages or logs
 
 ### 1.13 Local infrastructure
-- [ ] `docker-compose.local.yml`: postgres, redis, migrations, celery worker, celery beat, collector,
-      backtester, paper-trader, telegram worker; healthchecks + `depends_on: service_healthy`;
+- [x] `docker-compose.local.yml`: postgres, redis, migrations, collector (Celery `data` queue), telegram-worker
+      (Celery `notify` queue), beat, paper-trader, tools (backtests/CLI); healthchecks + `depends_on: service_healthy`;
       per-service env subsets
-- [ ] `docker compose config` validated
+- [x] `docker compose config` validated; full stack built and verified healthy end to end
 
 ### 1.14 Go / No-Go
 - [ ] Go/No-Go criteria (agreed 2026-10-19):

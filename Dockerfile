@@ -18,11 +18,16 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 FROM python:3.12-slim AS runtime
 
-RUN groupadd --system app && useradd --system --gid app --home /app app
+# UID/GID 1000 matches the usual host user, so bind-mounted report folders stay writable.
+ARG APP_UID=1000
+ARG APP_GID=1000
+ARG GIT_SHA=unknown
+RUN groupadd --gid "${APP_GID}" app && useradd --uid "${APP_UID}" --gid app --home /app --no-create-home app
 WORKDIR /app
 COPY --from=builder --chown=app:app /app /app
 COPY --chown=app:app config ./config
 ENV PATH="/app/.venv/bin:$PATH" \
+    GIT_SHA="${GIT_SHA}" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 USER app

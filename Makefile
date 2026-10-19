@@ -1,7 +1,7 @@
 COMPOSE_LOCAL := docker compose -f docker-compose.local.yml
 UV := uv run
 
-.PHONY: install lint format typecheck test test-integration check up down logs ps migrate data-load backtest walk-forward scan paper
+.PHONY: install lint format typecheck test test-integration check up down logs ps migrate data-load backtest walk-forward scan paper-logs paper-summary paper-compare
 
 install:
 	uv sync
@@ -52,5 +52,11 @@ walk-forward:
 scan:
 	$(COMPOSE_LOCAL) run --rm tools pendulum scan run $(ARGS)
 
-paper:
-	$(COMPOSE_LOCAL) up -d paper-trader
+paper-logs:
+	$(COMPOSE_LOCAL) logs -f --tail=100 paper-trader
+
+paper-summary:
+	$(COMPOSE_LOCAL) run --rm tools pendulum paper summary $(ARGS)
+
+paper-compare:
+	$(COMPOSE_LOCAL) run --rm tools pendulum paper compare

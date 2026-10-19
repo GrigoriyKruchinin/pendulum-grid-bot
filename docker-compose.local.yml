@@ -1,0 +1,194 @@
+# Pendulum local stack (Stage 1: read-only market data, backtests, paper trading).
+# Values are interpolated from `.env`; every service receives only the variables it needs.
+name: pendulum-local
+
+x-image: &image
+  image: pendulum:local
+  build:
+    context: .
+    args:
+      GIT_SHA: ${GIT_SHA:-local}
+
+x-env-app: &env-app
+  APP_ENV: ${APP_ENV:-local}
+  APP_LOG_LEVEL: ${APP_LOG_LEVEL:-INFO}
+  APP_LOG_JSON: ${APP_LOG_JSON:-true}
+
+x-env-db: &env-db
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-pendulum}
+  POSTGRES_USER: ${POSTGRES_USER:-pendulum}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+
+x-env-exchange: &env-exchange
+  EXCHANGE_ACTIVE: ${EXCHANGE_ACTIVE:-bybit}
+  EXCHANGE_BYBIT_API_KEY: ${EXCHANGE_BYBIT_API_KEY:-}
+  EXCHANGE_BYBIT_API_SECRET: ${EXCHANGE_BYBIT_API_SECRET:-}
+  EXCHANGE_BYBIT_TESTNET: ${EXCHANGE_BYBIT_TESTNET:-false}
+  EXCHANGE_BYBIT_MAKER_FEE: ${EXCHANGE_BYBIT_MAKER_FEE:-0.001}
+  EXCHANGE_BYBIT_TAKER_FEE: ${EXCHANGE_BYBIT_TAKER_FEE:-0.001}
+
+x-env-strategy: &env-strategy
+  GRID_DEFAULT_TYPE: ${GRID_DEFAULT_TYPE:-geometric}
+  GRID_DEFAULT_LEVELS: ${GRID_DEFAULT_LEVELS:-20}
+  GRID_DEFAULT_WIDTH_PCT: ${GRID_DEFAULT_WIDTH_PCT:-16}
+  GRID_DEFAULT_EXIT_POLICY: ${GRID_DEFAULT_EXIT_POLICY:-stop_loss+trailing_up}
+  GRID_MIN_STEP_FEE_MULTIPLIER: ${GRID_MIN_STEP_FEE_MULTIPLIER:-1.5}
+  GRID_QUOTE_ASSET: ${GRID_QUOTE_ASSET:-USDT}
+  GRID_PAIRS_FILE: config/pairs.toml
+  SCANNER_MIN_24H_VOLUME_USD: ${SCANNER_MIN_24H_VOLUME_USD:-5000000}
+  SCANNER_MAX_SPREAD_BPS: ${SCANNER_MAX_SPREAD_BPS:-10}
+  SCANNER_LOOKBACK_DAYS: ${SCANNER_LOOKBACK_DAYS:-30}
+  SCANNER_TOP_N: ${SCANNER_TOP_N:-15}
+  RISK_MAX_TOTAL_CAPITAL_USD: ${RISK_MAX_TOTAL_CAPITAL_USD:-500}
+  RISK_MAX_PAIR_CAPITAL_PCT: ${RISK_MAX_PAIR_CAPITAL_PCT:-30}
+  BACKTEST_SLIPPAGE_BPS: ${BACKTEST_SLIPPAGE_BPS:-5}
+  BACKTEST_DEFAULT_TIMEFRAME: ${BACKTEST_DEFAULT_TIMEFRAME:-1m}
+
+x-env-telegram: &env-telegram
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
+
+x-app-volumes: &app-volumes
+  - ./config:/app/config:ro
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pendulum}
+      POSTGRES_USER: ${POSTGRES_USER:-pendulum}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  migrations:
+    <<: *image
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      <<: [*env-app, *env-db]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  collector:
+    <<: *image
+    command: ["celery", "-A", "pendulum.workers.celery_app", "worker", "-Q", "data", "-n", "collector@%h",
+              "--concurrency", "1", "--loglevel", "INFO"]
+    environment:
+      <<: [*env-app, *env-db, *env-exchange, *env-strategy]
+      REDIS_URL: redis://redis:6379/0
+    volumes: *app-volumes
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A pendulum.workers.celery_app inspect ping -d collector@$$HOSTNAME --timeout 5"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  telegram-worker:
+    <<: *image
+    command: ["celery", "-A", "pendulum.workers.celery_app", "worker", "-Q", "notify", "-n", "telegram@%h",
+              "--concurrency", "1", "--loglevel", "INFO"]
+    environment:
+      <<: [*env-app, *env-db, *env-telegram]
+      EXCHANGE_ACTIVE: ${EXCHANGE_ACTIVE:-bybit}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A pendulum.workers.celery_app inspect ping -d telegram@$$HOSTNAME --timeout 5"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  beat:
+    <<: *image
+    command: ["celery", "-A", "pendulum.workers.celery_app", "beat", "--schedule", "/tmp/celerybeat-schedule",
+              "--loglevel", "INFO"]
+    environment:
+      <<: *env-app
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      collector:
+        condition: service_healthy
+      telegram-worker:
+        condition: service_healthy
+    healthcheck:
+      # Beat rewrites its schedule file at least every few minutes while alive.
+      test: ["CMD", "python", "-c",
+             "import os,sys,time; sys.exit(time.time() - os.path.getmtime('/tmp/celerybeat-schedule') > 600)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  paper-trader:
+    <<: *image
+    command: ["pendulum", "paper", "run"]
+    environment:
+      <<: [*env-app, *env-db, *env-exchange, *env-strategy, *env-telegram]
+    volumes: *app-volumes
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+    healthcheck:
+      # The session state is persisted every minute; stale state means the stream is stuck.
+      test: ["CMD", "python", "-c",
+             "import asyncio,sys; from pendulum.workers.health import paper_healthy; sys.exit(0 if asyncio.run(paper_healthy()) else 1)"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 120s
+    restart: unless-stopped
+
+  # On-demand CLI (backtests, data loads): `docker compose -f docker-compose.local.yml run --rm tools pendulum ...`
+  tools:
+    <<: *image
+    profiles: ["tools"]
+    command: ["pendulum", "--help"]
+    environment:
+      <<: [*env-app, *env-db, *env-exchange, *env-strategy]
+      APP_LOG_LEVEL: WARNING
+    volumes:
+      - ./config:/app/config:ro
+      - ./docs/reports:/app/docs/reports
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  redisdata:

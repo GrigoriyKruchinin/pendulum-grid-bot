@@ -15,6 +15,13 @@ celery_app.conf.update(
     task_ignore_result=True,
     timezone="UTC",
     enable_utc=True,
+    # Separate queues let each worker container hold only the secrets its tasks need.
+    task_routes={
+        "pendulum.sync_candles": {"queue": "data"},
+        "pendulum.scan_pairs": {"queue": "data"},
+        "pendulum.daily_summary": {"queue": "notify"},
+        "pendulum.weekly_summary": {"queue": "notify"},
+    },
     beat_schedule={
         "sync-candles": {"task": "pendulum.sync_candles", "schedule": 300.0},
         "weekly-scan": {
