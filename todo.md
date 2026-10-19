@@ -88,7 +88,7 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 ### 1.11 Paper trader
 - [x] Paper sessions on live WS trades via `VirtualOrderGateway` (same fill rules), resume after restart, candle backfill of stream gaps
 - [x] Paper sessions persisted; comparison vs backtest over the same period (`pendulum paper compare`)
-- [ ] Runs ≥ 14 days on selected pairs (owner runs `make paper` after Stage 1 infra is up)
+- [ ] Runs ≥ 14 days on selected pairs (owner started the stack on 2026-10-19; plans a few days first, then `make paper-compare`)
 
 ### 1.12 Telegram notifier
 - [x] HTML-formatted messages: start/resume, daily virtual summary, range-exit signal, stop, weekly results
