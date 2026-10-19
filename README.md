@@ -61,7 +61,7 @@ Development:
 ```bash
 make install                  # uv sync
 make check                    # ruff + mypy --strict + pytest
-make test-integration         # needs Postgres (POSTGRES_* env) and network access to Bybit
+make test-integration         # Postgres via POSTGRES_* (uses a separate <db>_test database) + Bybit access
 ```
 
 ## Architecture
