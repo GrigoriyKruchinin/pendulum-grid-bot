@@ -13,7 +13,7 @@ Current stage: **Stage 0** — waiting for the owner's "Start Implementation".
 - [x] `.claude/skills/`: `check-code-quality`, `run-tests`, `audit-risks`, `run-backtest`
 - [x] `todo.md` with Stages 1–3
 - [x] Git: `.gitignore` (project additions), `.env.example`, `origin` connected, first commit + push
-- [ ] `README.md` header + `docs/assets/logo.svg`
+- [x] `README.md` header + `docs/assets/logo.svg`
 - [ ] `docs/guides/stage-1-user-guide.md`
 - [ ] Owner says "Start Implementation"
 
