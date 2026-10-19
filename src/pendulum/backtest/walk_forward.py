@@ -27,8 +27,10 @@ from pendulum.backtest.engine import (
 from pendulum.config.settings import GridType
 from pendulum.domain.models import Candle, Instrument
 from pendulum.domain.money import ONE, ZERO
+from pendulum.grid.regime import MAX_LOOKBACK_HOURS
 
 DAYS_PER_YEAR = Decimal(365)
+WARMUP = timedelta(hours=MAX_LOOKBACK_HOURS)
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +72,23 @@ def default_param_grid() -> list[GridParams]:
             (6, 10, 16, 24),
             (GridType.GEOMETRIC, GridType.ARITHMETIC),
             ("stop_loss+trailing_up", "rebuild", "wait"),
+        )
+    ]
+
+
+def regime_param_grid() -> list[GridParams]:
+    """Iteration 1 space: 2 level counts x 4 widths x 2 grid types x 3 exits x 3 regime filters = 144 sets.
+
+    30/40 levels are omitted: at the agreed $150 per pair they break Bybit's minimum order size anyway.
+    """
+    return [
+        GridParams(levels, Decimal(width), grid_type, exit_policy, regime)
+        for levels, width, grid_type, exit_policy, regime in itertools.product(
+            (10, 20),
+            (6, 10, 16, 24),
+            (GridType.GEOMETRIC, GridType.ARITHMETIC),
+            ("stop_loss+trailing_up", "rebuild", "wait"),
+            ("none", "er72", "er168"),
         )
     ]
 
@@ -232,18 +251,20 @@ def select_best(results: Sequence[BacktestResult], cfg: WalkForwardConfig) -> Ba
 
 # -- process pool workers -----------------------------------------------------------------------------
 
-_WORKER_STATE: tuple[list[Candle], Instrument, SimulationConfig] | None = None
+_WORKER_STATE: tuple[list[Candle], list[Candle], Instrument, SimulationConfig] | None = None
 
 
-def _init_worker(candles: list[Candle], instrument: Instrument, config: SimulationConfig) -> None:
+def _init_worker(
+    candles: list[Candle], warmup: list[Candle], instrument: Instrument, config: SimulationConfig
+) -> None:
     global _WORKER_STATE  # noqa: PLW0603 - per-process cache avoids re-pickling candles per task
-    _WORKER_STATE = (candles, instrument, config)
+    _WORKER_STATE = (candles, warmup, instrument, config)
 
 
 def _evaluate(params: GridParams) -> BacktestResult:
     assert _WORKER_STATE is not None  # noqa: S101 - set by the pool initializer
-    candles, instrument, config = _WORKER_STATE
-    result = asyncio.run(run_backtest(candles, instrument, params, config))
+    candles, warmup, instrument, config = _WORKER_STATE
+    result = asyncio.run(run_backtest(candles, instrument, params, config, warmup=warmup))
     result.equity_curve = []
     return result
 
@@ -256,6 +277,8 @@ def _slice(
 
 async def _evaluate_grid(
     candles: list[Candle],
+    *,
+    warmup: list[Candle],
     instrument: Instrument,
     config: SimulationConfig,
     grid: Sequence[GridParams],
@@ -264,13 +287,13 @@ async def _evaluate_grid(
     if workers <= 1:
         out = []
         for p in grid:
-            r = await run_backtest(candles, instrument, p, config)
+            r = await run_backtest(candles, instrument, p, config, warmup=warmup)
             r.equity_curve = []
             out.append(r)
         return out
     loop = asyncio.get_running_loop()
     with ProcessPoolExecutor(
-        max_workers=workers, initializer=_init_worker, initargs=(candles, instrument, config)
+        max_workers=workers, initializer=_init_worker, initargs=(candles, warmup, instrument, config)
     ) as pool:
         return list(await asyncio.gather(*(loop.run_in_executor(pool, _evaluate, p) for p in grid)))
 
@@ -297,12 +320,21 @@ async def run_walk_forward(
         test = _slice(candles, times, window.train_end, window.test_end)
         if not train or not test:
             continue
-        train_results = await _evaluate_grid(train, instrument, config, grid, n_workers)
+        # Regime filters warm up on the bars right before each span (strictly past data).
+        train_warmup = _slice(candles, times, window.train_start - WARMUP, window.train_start)
+        test_warmup = _slice(candles, times, window.train_end - WARMUP, window.train_end)
+        train_results = await _evaluate_grid(
+            train, warmup=train_warmup, instrument=instrument, config=config, grid=grid, workers=n_workers
+        )
         best = select_best(train_results, wf)
         eligible = sum(
             1 for r in train_results if r.error is None and r.max_drawdown <= wf.max_train_drawdown
         )
-        test_result = await run_backtest(test, instrument, best.params, config) if best is not None else None
+        test_result = (
+            await run_backtest(test, instrument, best.params, config, warmup=test_warmup)
+            if best is not None
+            else None
+        )
         result.windows.append(
             WindowResult(window, best.params if best else None, best, test_result, len(grid), eligible)
         )

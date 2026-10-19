@@ -129,9 +129,9 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 Hypothesis: the grid loses because it keeps trading through trends. Trading only while the market is
 range-bound (rolling efficiency ratio low) and sitting in USDT during trends turns the OOS result positive.
 Criteria: **unchanged** (same six backtest criteria + paper divergence), evaluated on the same 10 pairs.
-- [ ] Regime filter (`IRegimeFilter`): rolling hourly efficiency ratio with hysteresis; grid liquidates to USDT
+- [x] Regime filter (`IRegimeFilter`): rolling hourly efficiency ratio with hysteresis; grid liquidates to USDT
       when a trend starts and re-enters around the current price when the range returns
-- [ ] Backtester supports re-entry after filter/stop exits; filter is a walk-forward parameter
+- [x] Backtester supports re-entry after filter/stop exits; filter is a walk-forward parameter (`--grid regime`, 144 sets)
 - [ ] History extended to 2023-10-19 → 2026-10-19 (bull, bear and sideways phases)
 - [ ] Walk-forward on 10 pairs: filtered vs unfiltered on the same 3-year data
 - [ ] Iteration section in `docs/reports/stage-1-go-no-go.md`; decision Go / Iterate (last) / No-Go

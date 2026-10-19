@@ -14,6 +14,7 @@ from pendulum.domain.money import ONE, ZERO, bps
 from pendulum.execution.virtual import VirtualExchange, VirtualOrderGateway
 from pendulum.grid.exit_policies import ExitAction, make_exit_policy
 from pendulum.grid.plan import GridPlan, GridPlanError, GridSpec, build_plan
+from pendulum.grid.regime import make_regime_filter
 from pendulum.grid.trader import GridTrader
 
 DAYS_PER_YEAR = Decimal(365)
@@ -27,6 +28,7 @@ class GridParams:
     width_pct: Decimal
     grid_type: GridType
     exit_policy: str = "stop_loss+trailing_up"
+    regime: str = "none"
 
     def to_dict(self) -> dict[str, Any]:
         """JSON-friendly form."""
@@ -35,11 +37,13 @@ class GridParams:
             "width_pct": str(self.width_pct),
             "grid_type": self.grid_type.value,
             "exit_policy": self.exit_policy,
+            "regime": self.regime,
         }
 
     def label(self) -> str:
         """Short human label."""
-        return f"{self.grid_type.value[:4]}/{self.levels}L/{self.width_pct}%/{self.exit_policy}"
+        base = f"{self.grid_type.value[:4]}/{self.levels}L/{self.width_pct}%/{self.exit_policy}"
+        return base if self.regime == "none" else f"{base}/{self.regime}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +92,8 @@ class BacktestResult:
     stopped: bool
     buy_hold_return: Decimal
     error: str | None = None
+    regime_exits: int = 0  # grid closed because the regime filter detected a trend
+    bars_active: int = 0  # bars with a running grid (the rest is cash)
     # Sampled equity; a sample may be preceded by the trough since the previous sample (same timestamp).
     equity_curve: list[tuple[datetime, Decimal]] = field(default_factory=list)
 
@@ -136,6 +142,11 @@ class BacktestResult:
         return self.fees_paid / gross if gross > 0 else ZERO
 
     @property
+    def time_active(self) -> Decimal:
+        """Share of bars with a running grid."""
+        return Decimal(self.bars_active) / Decimal(self.bars) if self.bars else ZERO
+
+    @property
     def time_in_range(self) -> Decimal:
         """Share of bars that closed inside the active grid range."""
         return Decimal(self.bars_in_range) / Decimal(self.bars) if self.bars else ZERO
@@ -165,6 +176,8 @@ class BacktestResult:
             "range_exits": self.range_exits,
             "rebuilds": self.rebuilds,
             "stopped": self.stopped,
+            "regime_exits": self.regime_exits,
+            "time_active": r(self.time_active),
             "buy_hold_return": r(self.buy_hold_return),
             "buy_hold_annualized": r(self.buy_hold_annualized),
             "excess_vs_buy_hold": r(self.net_return - self.buy_hold_return),
@@ -189,8 +202,16 @@ def buy_and_hold_return(first: Candle, last: Candle, config: SimulationConfig) -
     return last.close / (entry * (ONE + config.fees.taker)) - ONE
 
 
+STOP_COOLDOWN = timedelta(hours=24)  # after a stop-loss, re-entry waits at least this long
+
+
 class _Simulation:
-    """State of one backtest run."""
+    """State of one backtest run.
+
+    Without a regime filter the behaviour is the classic single grid: a stop-loss ends trading for the run.
+    With a filter, the grid is closed to cash when a trend starts and re-opened around the current price
+    (with all current equity) when the range returns; after a stop-loss re-entry waits ``STOP_COOLDOWN``.
+    """
 
     def __init__(
         self, candles: Sequence[Candle], instrument: Instrument, params: GridParams, config: SimulationConfig
@@ -228,10 +249,19 @@ class _Simulation:
         self.clock = _Clock(first.open_time)
         self.gateway = VirtualOrderGateway(self.exchange, self.clock)
         self.gateway.last_price = first.open
+        self.regime = make_regime_filter(params.regime)
+        self.reentry = params.regime != "none"
+        self.traders: list[GridTrader] = []
         self.trader: GridTrader | None = None
+        self.terminal = False
+        self.cooldown_until: datetime | None = None
         self.was_in_range = True
         self.peak = ZERO
         self.trough_since_sample: Decimal | None = None
+
+    @property
+    def active(self) -> bool:
+        return self.trader is not None and self.trader.active
 
     def make_plan(self, price: Decimal, capital: Decimal) -> GridPlan:
         p = self.params
@@ -244,28 +274,36 @@ class _Simulation:
             entry_cost_buffer=self.config.fees.taker + bps(self.config.slippage_bps) * 2,
         )
 
-    async def start(self) -> bool:
-        first = self.candles[0]
+    async def maybe_enter(self, price: Decimal, now: datetime) -> None:
+        """Open a grid at ``price`` if the regime and cooldown allow it."""
+        if self.terminal or self.active or not self.regime.allows_trading():
+            return
+        if self.cooldown_until is not None and now < self.cooldown_until:
+            return
         try:
-            plan = self.make_plan(first.open, self.config.capital)
+            plan = self.make_plan(price, self.exchange.equity(price))
         except GridPlanError as exc:
-            self.result.error = str(exc)
-            self.result.equity_curve = [
-                (self.result.start, self.config.capital),
-                (self.result.end, self.config.capital),
-            ]
-            return False
-        self.trader = GridTrader(
+            if not self.traders:
+                self.result.error = str(exc)
+                self.terminal = True
+            return
+        trader = GridTrader(
             plan,
             self.gateway,
             symbol=self.instrument.symbol,
             filters=self.instrument.filters,
             fees=self.config.fees,
             exit_policy=make_exit_policy(self.params.exit_policy),
-            id_prefix="bt",
+            id_prefix=f"bt{len(self.traders)}",
         )
-        await self.trader.start(first.open, first.open_time)
-        return True
+        self.traders.append(trader)
+        self.trader = trader
+        self.was_in_range = True
+        await trader.start(price, now)
+
+    async def stop(self, trader: GridTrader, now: datetime, exit_price: Decimal) -> None:
+        self.gateway.last_price = exit_price
+        await trader.stop(now, liquidate=True)
 
     async def handle_exit(self, trader: GridTrader, candle: Candle, now: datetime) -> None:
         in_range = trader.plan.lower <= candle.close <= trader.plan.upper
@@ -275,16 +313,20 @@ class _Simulation:
         self.was_in_range = in_range
         action = await trader.evaluate_exit(candle.close, now, low=candle.low)
         if action is ExitAction.STOP:
-            self.gateway.last_price = candle.low  # worst price of the bar
-            await trader.stop(now, liquidate=True)
+            await self.stop(trader, now, candle.low)  # worst price of the bar
             self.gateway.last_price = candle.close
             self.result.stopped = True
+            if self.reentry:
+                self.cooldown_until = now + STOP_COOLDOWN
+            else:
+                self.terminal = True
         elif action is ExitAction.REBUILD:
             try:
                 plan = self.make_plan(candle.close, self.exchange.equity(candle.close))
             except GridPlanError:
-                await trader.stop(now, liquidate=True)
+                await self.stop(trader, now, candle.close)
                 self.result.stopped = True
+                self.terminal = not self.reentry
             else:
                 await trader.rebuild(plan, candle.close, now)
                 self.was_in_range = True
@@ -308,32 +350,51 @@ class _Simulation:
             self.trough_since_sample = None
         return equity
 
-    async def run(self, equity_sample: timedelta) -> BacktestResult:
-        if not await self.start():
-            return self.result
+    async def step(self, candle: Candle, now: datetime) -> None:
+        fills = self.exchange.match_candle(candle, now)
+        self.clock.now = now
+        self.gateway.last_price = candle.close
         trader = self.trader
-        assert trader is not None  # noqa: S101 - set by start()
-        next_sample = self.result.start
-        equity = self.config.capital
-        for candle in self.candles:
-            now = candle.open_time + self.tf
-            fills = self.exchange.match_candle(candle, now)
-            self.clock.now = now
-            self.gateway.last_price = candle.close
+        if trader is not None:
             for fill in fills:
                 await trader.on_fill(fill)
             if trader.active:
                 await self.handle_exit(trader, candle, now)
+        self.regime.update(now, candle.close)
+        if self.active and not self.regime.allows_trading():
+            assert self.trader is not None  # noqa: S101 - implied by active
+            await self.stop(self.trader, now, candle.close)
+            self.result.regime_exits += 1
+        elif not self.active:
+            await self.maybe_enter(candle.close, now)
+        self.result.bars_active += int(self.active)
+
+    async def run(self, warmup: Sequence[Candle], equity_sample: timedelta) -> BacktestResult:
+        for candle in warmup:
+            self.regime.update(candle.open_time + self.tf, candle.close)
+        first = self.candles[0]
+        await self.maybe_enter(first.open, first.open_time)
+        if self.result.error is not None:
+            self.result.equity_curve = [
+                (self.result.start, self.config.capital),
+                (self.result.end, self.config.capital),
+            ]
+            return self.result
+        next_sample = self.result.start
+        equity = self.config.capital
+        for candle in self.candles:
+            now = candle.open_time + self.tf
+            await self.step(candle, now)
             sample = now >= next_sample
             equity = self.track_equity(candle, now, sample)
             if sample:
                 next_sample = now + equity_sample
         r = self.result
         r.final_equity = equity
-        r.realized = trader.realized_profit
+        r.realized = sum((t.realized_profit for t in self.traders), ZERO)
         r.fees_paid = self.exchange.fees_paid_quote
-        r.cycles = trader.cycle_count
-        r.rebuilds = trader.rebuilds
+        r.cycles = sum(t.cycle_count for t in self.traders)
+        r.rebuilds = sum(t.rebuilds for t in self.traders)
         return r
 
 
@@ -343,9 +404,13 @@ async def run_backtest(
     params: GridParams,
     config: SimulationConfig,
     *,
+    warmup: Sequence[Candle] = (),
     equity_sample: timedelta = timedelta(hours=1),
 ) -> BacktestResult:
-    """Simulate ``params`` over ``candles`` (oldest first, gap-free preferred)."""
+    """Simulate ``params`` over ``candles`` (oldest first, gap-free preferred).
+
+    ``warmup`` bars precede ``candles`` and only feed the regime filter (no trading).
+    """
     if not candles:
         raise ValueError("no candles")
-    return await _Simulation(candles, instrument, params, config).run(equity_sample)
+    return await _Simulation(candles, instrument, params, config).run(warmup, equity_sample)

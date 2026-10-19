@@ -14,7 +14,12 @@ from pendulum.backtest.criteria import GoNoGoCriteria, evaluate_backtest_criteri
 from pendulum.backtest.engine import GridParams, SimulationConfig
 from pendulum.backtest.report import pct
 from pendulum.backtest.service import DataQualityError
-from pendulum.backtest.walk_forward import WalkForwardConfig, default_param_grid, quick_param_grid
+from pendulum.backtest.walk_forward import (
+    WalkForwardConfig,
+    default_param_grid,
+    quick_param_grid,
+    regime_param_grid,
+)
 from pendulum.config.pairs import load_pairs
 from pendulum.config.settings import BacktestSettings, GridSettings, GridType, RiskSettings
 from pendulum.container import build_container, setup_logging
@@ -114,6 +119,7 @@ def backtest_run(
     width: Annotated[str, typer.Option(help="Total range width in percent")] = "20",
     grid_type: Annotated[GridType, typer.Option("--grid-type")] = GridType.GEOMETRIC,
     exit_policy: Annotated[str, typer.Option("--exit", help="Range-exit policy")] = "stop_loss+trailing_up",
+    regime: Annotated[str, typer.Option(help="Regime filter: none, er72, er168")] = "none",
     capital: Annotated[str | None, typer.Option(help="Quote capital (default: per-pair risk cap)")] = None,
 ) -> None:
     """Backtest one parameter set on stored candles and write a report."""
@@ -130,7 +136,7 @@ def backtest_run(
                 slippage_bps=bt.slippage_bps,
                 timeframe=tf,
             )
-            params = GridParams(levels, Decimal(width), grid_type, exit_policy)
+            params = GridParams(levels, Decimal(width), grid_type, exit_policy, regime)
             end = parse_date(until) if until else datetime.now(UTC)
             run_id, r, path = await svc.run(symbol, parse_date(since), end, params, config)
             if r.error:
@@ -154,7 +160,10 @@ def backtest_walk_forward(
     tf: Annotated[Timeframe, typer.Option("--tf", help="Simulation timeframe")] = Timeframe.M5,
     train_days: Annotated[int, typer.Option(help="Train window length")] = 60,
     test_days: Annotated[int, typer.Option(help="Test window length (also the step)")] = 14,
-    quick: Annotated[bool, typer.Option(help="Use the small 12-set parameter grid")] = False,
+    grid_name: Annotated[
+        str,
+        typer.Option("--grid", help="Parameter space: default (96), regime (144, with filters), quick (12)"),
+    ] = "default",
     workers: Annotated[int | None, typer.Option(help="Parallel processes (default: CPUs - 1)")] = None,
     capital: Annotated[str | None, typer.Option(help="Quote capital (default: per-pair risk cap)")] = None,
 ) -> None:
@@ -165,7 +174,10 @@ def backtest_walk_forward(
             svc = c.backtest_service
             bt = BacktestSettings()
             wf = WalkForwardConfig(train_days=train_days, test_days=test_days)
-            grid = quick_param_grid() if quick else default_param_grid()
+            grids = {"default": default_param_grid, "regime": regime_param_grid, "quick": quick_param_grid}
+            if grid_name not in grids:
+                raise typer.BadParameter(f"unknown grid {grid_name!r}")
+            grid = grids[grid_name]()
             end = parse_date(until) if until else datetime.now(UTC)
             results = []
             for symbol in parse_pairs(pairs):
