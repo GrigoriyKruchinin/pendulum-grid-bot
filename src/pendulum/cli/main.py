@@ -219,7 +219,11 @@ def scan_run() -> None:
 
 
 @paper_app.command("run")
-def paper_run() -> None:
+def paper_run(
+    rearm: Annotated[
+        bool, typer.Option(help="Open new grids for pairs whose last session was stopped")
+    ] = False,
+) -> None:
     """Run paper trading for enabled pairs in config/pairs.toml (long-running)."""
 
     async def _main() -> None:
@@ -234,6 +238,7 @@ def paper_run() -> None:
                 grid=grid,
                 risk=RiskSettings(),
                 backtest=BacktestSettings(),
+                rearm_stopped=rearm,
             )
             await runner.run()
 

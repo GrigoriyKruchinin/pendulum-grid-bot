@@ -113,9 +113,11 @@ async def test_trading_session_flow(db: Database) -> None:
     await repo.add_equity_point(sid, point)
     await repo.add_equity_point(sid, point)
     await repo.save_state(sid, {"orders": 1})
-    assert await repo.get_running("paper", "bybit", "SOL/USDT") == (sid, {"orders": 1})
+    assert await repo.get_latest("paper", "bybit", "SOL/USDT") == (sid, "running", {"orders": 1})
     await repo.save_state(sid, {"orders": 0}, status="stopped")
-    assert await repo.get_running("paper", "bybit", "SOL/USDT") is None
+    assert await repo.get_latest("paper", "bybit", "SOL/USDT") == (sid, "stopped", {"orders": 0})
+    await repo.prune_after(sid, T0)
+    assert await SessionReadRepository(db).cycle_stats(sid, T0 - M) == (0, Decimal(0))
 
 
 async def test_session_reader(db: Database) -> None:

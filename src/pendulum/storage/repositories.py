@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import delete, func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 
 from pendulum.domain.models import (
@@ -313,22 +313,34 @@ class TradingSessionRepository:
                 update(TradingSessionRow).where(TradingSessionRow.id == session_id).values(**values)
             )
 
-    async def get_running(self, mode: str, exchange: str, symbol: str) -> tuple[int, dict[str, Any]] | None:
-        """Most recent running session for a pair (used to resume after restart)."""
+    async def get_latest(
+        self, mode: str, exchange: str, symbol: str
+    ) -> tuple[int, str, dict[str, Any]] | None:
+        """Most recent session for a pair (used to resume after restart or detect a stop)."""
         stmt = (
             select(TradingSessionRow)
             .where(
                 TradingSessionRow.mode == mode,
                 TradingSessionRow.exchange == exchange,
                 TradingSessionRow.symbol == symbol,
-                TradingSessionRow.status == "running",
             )
             .order_by(TradingSessionRow.id.desc())
             .limit(1)
         )
         async with self._db.sessions() as session:
             row = await session.scalar(stmt)
-        return None if row is None else (row.id, row.state)
+        return None if row is None else (row.id, row.status, row.state)
+
+    async def prune_after(self, session_id: int, ts: datetime) -> None:
+        """Remove events newer than the last persisted snapshot (crash between event write and snapshot)."""
+        async with self._db.transaction() as session:
+            await session.execute(delete(FillRow).where(FillRow.session_id == session_id, FillRow.ts > ts))
+            await session.execute(
+                delete(CycleRow).where(CycleRow.session_id == session_id, CycleRow.closed_at > ts)
+            )
+            await session.execute(
+                delete(OrderRow).where(OrderRow.session_id == session_id, OrderRow.created_at > ts)
+            )
 
     async def upsert_order(self, session_id: int, order: Order) -> None:
         """Insert or update an order by ``client_id``."""

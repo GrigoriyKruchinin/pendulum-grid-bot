@@ -20,10 +20,11 @@ async def paper_healthy() -> bool:
     finally:
         await db.dispose()
     if not sessions:
-        return False
+        return True  # nothing to monitor (all pairs stopped or skipped); the process itself is alive
     now = datetime.now(UTC)
     for s in sessions:
-        last = s.state.get("last_event")
-        if last is None or now - datetime.fromisoformat(last) > PAPER_STALE_AFTER:
+        marks = [s.state.get("heartbeat"), s.state.get("last_event")]
+        latest = max((datetime.fromisoformat(m) for m in marks if m), default=None)
+        if latest is None or now - latest > PAPER_STALE_AFTER:
             return False
     return True

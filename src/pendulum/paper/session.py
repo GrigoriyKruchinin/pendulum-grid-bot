@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -23,7 +24,7 @@ from pendulum.domain.ports import ITradingSessionStore
 from pendulum.execution.virtual import VirtualExchange, VirtualOrderGateway
 from pendulum.grid.exit_policies import ExitAction, make_exit_policy
 from pendulum.grid.plan import GridPlan, GridPlanError, GridSpec, build_plan
-from pendulum.grid.trader import GridTrader
+from pendulum.grid.trader import GridTrader, plan_from_state
 from pendulum.logging import get_logger
 from pendulum.notifications import templates
 from pendulum.notifications.telegram import INotifier
@@ -80,6 +81,10 @@ class PaperSession:
         self._was_in_range = True
         self.start_price: Decimal | None = None
         self._orders: dict[str, Order] = {}  # resting orders by client id, for status persistence
+        # Market data handlers and the heartbeat interleave on one event loop; the lock keeps every
+        # snapshot consistent with the events already written.
+        self.lock = asyncio.Lock()
+        self.heartbeat_at: datetime = now
 
     # -- setup ------------------------------------------------------------------------------------
 
@@ -113,6 +118,7 @@ class PaperSession:
             "maker_fee": str(self.fees.maker),
             "taker_fee": str(self.fees.taker),
             "slippage_bps": str(self.slippage_bps),
+            "min_step_fee_multiplier": str(self.min_step_fee_multiplier),
             "start_price": str(self.start_price) if self.start_price is not None else None,
         }
 
@@ -146,7 +152,7 @@ class PaperSession:
         """Restore account and grid from a persisted snapshot."""
         self.session_id = session_id
         self.exchange.restore(state["exchange"])
-        self.trader = self._new_trader(self._plan(price, self.capital))
+        self.trader = self._new_trader(plan_from_state(state["trader"]))
         self.trader.restore(state["trader"])
         self.last_event = datetime.fromisoformat(state["last_event"])
         self.start_price = Decimal(state["start_price"])
@@ -172,31 +178,50 @@ class PaperSession:
 
     async def on_trade(self, tick: TradeTick) -> None:
         """Process one live trade print."""
-        if self.trader is None or not self.trader.active or tick.ts < self.last_event:
-            return  # stopped, or already covered by a candle backfill
-        self.clock.now = tick.ts
-        self.gateway.last_price = tick.price
-        await self._handle_fills(self.exchange.match_trade(tick))
-        await self._check_exit(tick.price, tick.ts, low=tick.price)
-        self.last_event = tick.ts
-        await self.persist(tick.ts)
+        async with self.lock:
+            if self.trader is None or not self.trader.active or tick.ts < self.last_event:
+                return  # stopped, or already covered by a candle backfill
+            self.clock.now = tick.ts
+            self.gateway.last_price = tick.price
+            fills = self.exchange.match_trade(tick)
+            await self._handle_fills(fills)
+            await self._check_exit(tick.price, tick.ts, low=tick.price)
+            self.last_event = tick.ts
+            await self.persist(tick.ts, force=bool(fills))
 
     async def on_candles(self, candles: Sequence[Candle], timeframe: Timeframe = Timeframe.M1) -> None:
         """Backfill a stream gap with closed candles using the conservative candle rules."""
-        if self.trader is None or not self.trader.active:
-            return
-        tf = timedelta(seconds=timeframe.seconds)
-        for candle in candles:
-            close_time = candle.open_time + tf
-            if close_time <= self.last_event:
-                continue
-            fills = self.exchange.match_candle(candle, close_time)
-            self.clock.now = close_time
-            self.gateway.last_price = candle.close
-            await self._handle_fills(fills)
-            await self._check_exit(candle.close, close_time, low=candle.low)
-            self.last_event = close_time
-        await self.persist(self.last_event, force=True)
+        async with self.lock:
+            if self.trader is None or not self.trader.active:
+                return
+            tf = timedelta(seconds=timeframe.seconds)
+            for candle in candles:
+                close_time = candle.open_time + tf
+                if close_time <= self.last_event:
+                    continue
+                fills = self.exchange.match_candle(candle, close_time)
+                self.clock.now = close_time
+                self.gateway.last_price = candle.close
+                await self._handle_fills(fills)
+                await self._check_exit(candle.close, close_time, low=candle.low)
+                self.last_event = close_time
+                if fills:
+                    await self.persist(close_time, force=True)
+            await self.persist(self.last_event, force=True)
+
+    async def heartbeat(self, now: datetime) -> None:
+        """Periodic liveness mark and snapshot, also when a quiet pair has no trades."""
+        async with self.lock:
+            self.heartbeat_at = now
+            if (
+                self.session_id is not None
+                and self.trader is not None
+                and self.gateway.last_price is not None
+            ):
+                status = "running" if self.trader.active else "stopped"
+                await self.store.save_state(
+                    self.session_id, self.snapshot(self.gateway.last_price), status=status
+                )
 
     # -- internals --------------------------------------------------------------------------------
 
@@ -271,6 +296,7 @@ class PaperSession:
             "last_price": str(price),
             "start_price": str(self.start_price),
             "equity": str(self.exchange.equity(price)),
+            "heartbeat": self.heartbeat_at.isoformat(),
         }
 
     async def persist(self, now: datetime, *, force: bool = False) -> None:

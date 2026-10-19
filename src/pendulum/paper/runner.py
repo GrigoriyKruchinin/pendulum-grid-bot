@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from html import escape
 
 from pendulum.backtest.engine import GridParams
 from pendulum.config.pairs import PairConfig
 from pendulum.config.settings import BacktestSettings, GridSettings, RiskSettings
 from pendulum.domain.models import Candle, FeeModel, Instrument, StreamGap, Symbol, Timeframe, TradeTick
 from pendulum.domain.ports import ITradingSessionStore
-from pendulum.exchanges.base import BaseExchangeAdapter
+from pendulum.exchanges.base import BaseExchangeAdapter, ExchangeError
+from pendulum.grid.plan import GridPlanError
 from pendulum.logging import get_logger
 from pendulum.market_data.loader import floor_time
 from pendulum.notifications.telegram import INotifier
@@ -44,6 +48,8 @@ class PaperRunner:
         grid: GridSettings,
         risk: RiskSettings,
         backtest: BacktestSettings,
+        rearm_stopped: bool = False,
+        heartbeat_every: float = 60.0,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self.adapter = adapter
@@ -54,7 +60,10 @@ class PaperRunner:
         self.risk = risk
         self.backtest = backtest
         self._now = now
+        self.rearm_stopped = rearm_stopped
+        self.heartbeat_every = heartbeat_every
         self.sessions: dict[Symbol, PaperSession] = {}
+        self._pending_gap: set[Symbol] = set()
 
     async def setup(self) -> list[Instrument]:
         """Resume running sessions or open new ones at the current price."""
@@ -69,36 +78,61 @@ class PaperRunner:
             )
         active: list[Instrument] = []
         for pair in self.pairs:
-            symbol = Symbol.parse(pair.symbol)
-            inst = self.adapter.find_instrument(instruments, symbol)
-            price = prices.get(symbol)
-            if price is None:
-                log.warning("paper_no_price", symbol=pair.symbol)
+            try:
+                inst = await self._setup_pair(pair, instruments, prices)
+            except (GridPlanError, ExchangeError) as exc:
+                # One unbuildable pair must not stop the others.
+                log.error("paper_pair_skipped", symbol=pair.symbol, error=str(exc))
+                await self.notifier.send(
+                    f"⚠️ <b>Paper pair skipped</b>: <code>{pair.symbol}</code>\n{escape(str(exc))}"
+                )
                 continue
-            rate = await self.adapter.fee_rate(inst)
-            now = self._now()
-            session = PaperSession(
-                exchange_id=self.adapter.exchange_id,
-                instrument=inst,
-                params=params_for(pair, self.grid),
-                capital=pair.capital_usd or self.risk.max_pair_capital_usd,
-                fees=FeeModel(rate.maker, rate.taker),
-                slippage_bps=self.backtest.slippage_bps,
-                min_step_fee_multiplier=self.grid.min_step_fee_multiplier,
-                store=self.store,
-                notifier=self.notifier,
-                now=now,
-            )
-            running = await self.store.get_running(MODE, self.adapter.exchange_id, pair.symbol)
-            if running is not None and "trader" in running[1]:
-                await session.resume(running[0], running[1], price)
-                await self.backfill(session, session.last_event, now)
-            else:
-                await session.open_new(price, now)
-            self.sessions[symbol] = session
-            active.append(inst)
-            log.info("paper_session_ready", symbol=pair.symbol, session_id=session.session_id)
+            if inst is not None:
+                active.append(inst)
         return active
+
+    async def _setup_pair(
+        self, pair: PairConfig, instruments: Sequence[Instrument], prices: dict[Symbol, Decimal]
+    ) -> Instrument | None:
+        symbol = Symbol.parse(pair.symbol)
+        inst = self.adapter.find_instrument(instruments, symbol)
+        price = prices.get(symbol)
+        if price is None:
+            log.warning("paper_no_price", symbol=pair.symbol)
+            return None
+        latest = await self.store.get_latest(MODE, self.adapter.exchange_id, pair.symbol)
+        if latest is not None and latest[1] == "stopped" and not self.rearm_stopped:
+            log.warning("paper_pair_stopped", symbol=pair.symbol, session_id=latest[0])
+            await self.notifier.send(
+                f"🛑 <b>{escape(pair.symbol)}</b> stays stopped (session {latest[0]}). "
+                "Restart with <code>pendulum paper run --rearm</code> to open a new grid."
+            )
+            return None
+        rate = await self.adapter.fee_rate(inst)
+        now = self._now()
+        session = PaperSession(
+            exchange_id=self.adapter.exchange_id,
+            instrument=inst,
+            params=params_for(pair, self.grid),
+            capital=pair.capital_usd or self.risk.max_pair_capital_usd,
+            fees=FeeModel(rate.maker, rate.taker),
+            slippage_bps=self.backtest.slippage_bps,
+            min_step_fee_multiplier=self.grid.min_step_fee_multiplier,
+            store=self.store,
+            notifier=self.notifier,
+            now=now,
+        )
+        if latest is not None and latest[1] == "running" and "trader" in latest[2]:
+            session_id, _, state = latest
+            # Events written after the last snapshot would be replayed by the backfill: drop them first.
+            await self.store.prune_after(session_id, datetime.fromisoformat(state["last_event"]))
+            await session.resume(session_id, state, price)
+            await self.backfill(session, session.last_event, now)
+        else:
+            await session.open_new(price, now)
+        self.sessions[symbol] = session
+        log.info("paper_session_ready", symbol=pair.symbol, session_id=session.session_id)
+        return inst
 
     async def backfill(self, session: PaperSession, start: datetime, end: datetime) -> None:
         """Replay closed 1m candles in ``[start, end)`` through the session."""
@@ -123,9 +157,15 @@ class PaperRunner:
         if session is None:
             return
         if isinstance(event, TradeTick):
+            if event.symbol in self._pending_gap:
+                # Replay everything since the last processed event, through the minute before this tick.
+                self._pending_gap.discard(event.symbol)
+                await self.backfill(session, session.last_event, event.ts)
             await session.on_trade(event)
         else:
-            await self.backfill(session, event.start, event.end)
+            # Disconnect detection lags the outage: backfill from the last processed event, not gap start.
+            await self.backfill(session, session.last_event, event.end)
+            self._pending_gap.add(event.symbol)
 
     async def run(self) -> None:
         """Run until cancelled."""
@@ -133,5 +173,18 @@ class PaperRunner:
         if not instruments:
             log.error("paper_no_sessions")
             return
-        async for event in self.adapter.ws.stream_trades(instruments):
-            await self.dispatch(event)
+        heartbeat = asyncio.create_task(self._heartbeat_loop())
+        try:
+            async for event in self.adapter.ws.stream_trades(instruments):
+                await self.dispatch(event)
+        finally:
+            heartbeat.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await heartbeat
+
+    async def _heartbeat_loop(self) -> None:
+        while True:
+            await asyncio.sleep(self.heartbeat_every)
+            now = self._now()
+            for session in self.sessions.values():
+                await session.heartbeat(now)

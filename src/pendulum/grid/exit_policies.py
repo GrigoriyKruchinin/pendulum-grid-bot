@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
 from enum import StrEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 from pendulum.domain.money import ONE
 
@@ -38,10 +38,26 @@ class IRangeExitPolicy(Protocol):
         """Forget state (called after a rebuild)."""
         ...
 
+    def snapshot(self) -> dict[str, Any]:
+        """Persistable state (timers)."""
+        ...
+
+    def restore(self, state: dict[str, Any]) -> None:
+        """Load a ``snapshot()``."""
+        ...
+
 
 @dataclass
 class _OutOfRangeTimer:
     since: datetime | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"since": self.since.isoformat() if self.since else None}
+
+    @classmethod
+    def from_dict(cls, state: dict[str, Any]) -> _OutOfRangeTimer:
+        since = state.get("since")
+        return cls(datetime.fromisoformat(since) if since else None)
 
     def update(self, outside: bool, ts: datetime) -> timedelta:
         if not outside:
@@ -67,6 +83,13 @@ class WaitExit:
     def reset(self) -> None:
         """Stateless."""
 
+    def snapshot(self) -> dict[str, Any]:
+        """Stateless."""
+        return {}
+
+    def restore(self, state: dict[str, Any]) -> None:
+        """Stateless."""
+
 
 @dataclass
 class StopLossExit:
@@ -84,6 +107,13 @@ class StopLossExit:
         return ExitAction.NONE
 
     def reset(self) -> None:
+        """Stateless."""
+
+    def snapshot(self) -> dict[str, Any]:
+        """Stateless."""
+        return {}
+
+    def restore(self, state: dict[str, Any]) -> None:
         """Stateless."""
 
 
@@ -107,6 +137,14 @@ class RebuildExit:
         """Clear the timer."""
         self._timer = _OutOfRangeTimer()
 
+    def snapshot(self) -> dict[str, Any]:
+        """Out-of-range timer."""
+        return self._timer.to_dict()
+
+    def restore(self, state: dict[str, Any]) -> None:
+        """Load the timer."""
+        self._timer = _OutOfRangeTimer.from_dict(state)
+
 
 @dataclass
 class TrailingUpExit:
@@ -127,6 +165,14 @@ class TrailingUpExit:
     def reset(self) -> None:
         """Clear the timer."""
         self._timer = _OutOfRangeTimer()
+
+    def snapshot(self) -> dict[str, Any]:
+        """Out-of-range timer."""
+        return self._timer.to_dict()
+
+    def restore(self, state: dict[str, Any]) -> None:
+        """Load the timer."""
+        self._timer = _OutOfRangeTimer.from_dict(state)
 
 
 @dataclass
@@ -158,6 +204,15 @@ class CompositeExit:
         """Reset both."""
         self.down.reset()
         self.up.reset()
+
+    def snapshot(self) -> dict[str, Any]:
+        """Both sides' state."""
+        return {"down": self.down.snapshot(), "up": self.up.snapshot()}
+
+    def restore(self, state: dict[str, Any]) -> None:
+        """Load both sides."""
+        self.down.restore(state.get("down", {}))
+        self.up.restore(state.get("up", {}))
 
 
 def make_exit_policy(name: str) -> IRangeExitPolicy:

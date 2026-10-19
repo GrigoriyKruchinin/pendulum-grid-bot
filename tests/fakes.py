@@ -204,12 +204,19 @@ class InMemorySessionStore:
         if status is not None:
             self.sessions[session_id]["status"] = status
 
-    async def get_running(self, mode: str, exchange: str, symbol: str) -> tuple[int, dict[str, Any]] | None:
+    async def get_latest(
+        self, mode: str, exchange: str, symbol: str
+    ) -> tuple[int, str, dict[str, Any]] | None:
         for sid in sorted(self.sessions, reverse=True):
             s = self.sessions[sid]
-            if (s["mode"], s["exchange"], s["symbol"], s["status"]) == (mode, exchange, symbol, "running"):
-                return sid, s["state"]
+            if (s["mode"], s["exchange"], s["symbol"]) == (mode, exchange, symbol):
+                return sid, s["status"], s["state"]
         return None
+
+    async def prune_after(self, session_id: int, ts: datetime) -> None:
+        self.fills = [f for f in self.fills if f.ts <= ts]
+        self.cycles = [c for c in self.cycles if c.closed_at <= ts]
+        self.pruned_at = ts
 
     async def upsert_order(self, session_id: int, order: Any) -> None:
         self.orders[order.client_id] = (order.status, order.filled_qty)

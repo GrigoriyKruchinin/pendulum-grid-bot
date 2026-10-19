@@ -273,25 +273,12 @@ class GridTrader:
             "realized": str(self.realized_profit),
             "rebuilds": self.rebuilds,
             "active": self.active,
+            "exit_policy": self.exit_policy.snapshot(),
         }
 
     def restore(self, state: dict[str, Any]) -> None:
         """Load a ``snapshot()``; orders must already exist in the executor."""
-        spec_d = state["plan"]
-        spec = GridSpec(
-            Decimal(spec_d["lower"]),
-            Decimal(spec_d["upper"]),
-            int(spec_d["levels"]),
-            GridType(spec_d["grid_type"]),
-            Decimal(spec_d["capital_quote"]),
-        )
-        self.plan = GridPlan(
-            spec,
-            tuple(Decimal(p) for p in state["prices"]),
-            tuple(Decimal(q) for q in state["slot_qty"]),
-            int(state["skipped_levels"]),
-            Decimal(state["min_step_ratio"]),
-        )
+        self.plan = plan_from_state(state)
         self._init_slots(self.plan)
         for slot, d in zip(self.slots, state["slots"], strict=True):
             slot.holding = Holding(d["holding"])
@@ -308,3 +295,23 @@ class GridTrader:
         self._realized_carry = Decimal(state["realized"])
         self.rebuilds = int(state["rebuilds"])
         self.active = bool(state["active"])
+        self.exit_policy.restore(state.get("exit_policy", {}))
+
+
+def plan_from_state(state: dict[str, Any]) -> GridPlan:
+    """Rebuild the exact ``GridPlan`` stored in a trader snapshot."""
+    spec_d = state["plan"]
+    spec = GridSpec(
+        Decimal(spec_d["lower"]),
+        Decimal(spec_d["upper"]),
+        int(spec_d["levels"]),
+        GridType(spec_d["grid_type"]),
+        Decimal(spec_d["capital_quote"]),
+    )
+    return GridPlan(
+        spec,
+        tuple(Decimal(p) for p in state["prices"]),
+        tuple(Decimal(q) for q in state["slot_qty"]),
+        int(state["skipped_levels"]),
+        Decimal(state["min_step_ratio"]),
+    )

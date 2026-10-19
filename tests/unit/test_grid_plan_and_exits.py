@@ -71,3 +71,12 @@ def test_make_exit_policy() -> None:
     assert make_exit_policy("stop_loss+trailing_up").name == "stop_loss+trailing_up"
     with pytest.raises(ValueError, match="unknown"):
         make_exit_policy("yolo")
+
+
+def test_exit_policy_timer_survives_snapshot() -> None:
+    p = make_exit_policy("stop_loss+trailing_up")
+    p.decide(Decimal(120), T0, LO, HI)
+    state = p.snapshot()
+    q = make_exit_policy("stop_loss+trailing_up")
+    q.restore(state)
+    assert q.decide(Decimal(120), T0 + timedelta(minutes=31), LO, HI) is ExitAction.REBUILD

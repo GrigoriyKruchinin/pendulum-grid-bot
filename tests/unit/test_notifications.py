@@ -73,3 +73,13 @@ def test_templates_escape_and_format() -> None:
     assert "unrealized +6.00 $" in s
     assert "B&amp;H +5.00%" in s
     assert "Not a forecast" in s
+
+
+@respx.mock
+async def test_non_json_error_body_does_not_raise() -> None:
+    respx.post(f"{API_URL}/bot{TOKEN}/sendMessage").mock(
+        return_value=httpx.Response(403, text="<html>blocked</html>")
+    )
+    n = TelegramNotifier(_settings())
+    assert not await n.send("x")
+    await n.aclose()

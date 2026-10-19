@@ -135,3 +135,67 @@ async def test_runner_opens_sessions_and_backfills_gaps() -> None:
     )
     await runner2.setup()
     assert len(store.sessions) == 1
+
+
+def _runner(rest: FakeRest, store: InMemorySessionStore, notifier: NullNotifier, **kw: object) -> PaperRunner:
+    return PaperRunner(
+        adapter=FakeAdapter(rest, FakeWs(kw.pop("events", []))),  # type: ignore[arg-type]
+        store=store,
+        notifier=notifier,
+        pairs=kw.pop("pairs", [PairConfig(symbol="SOL/USDT", levels=5, range_width_pct=Decimal(20))]),  # type: ignore[arg-type]
+        grid=GridSettings(_env_file=None, default_exit_policy="wait"),
+        risk=RiskSettings(_env_file=None),
+        backtest=BacktestSettings(_env_file=None),
+        now=lambda: T0 + timedelta(minutes=10),
+        **kw,  # type: ignore[arg-type]
+    )
+
+
+def _rest() -> FakeRest:
+    rest = FakeRest(Timeframe.M1, limit=1000)
+    rest.tickers = [
+        Ticker(Symbol("SOL", "USDT"), Decimal("99.9"), Decimal("100.1"), Decimal(100), Decimal(1), T0)
+    ]
+    return rest
+
+
+async def test_stopped_pair_requires_rearm() -> None:
+    store, notifier = InMemorySessionStore(), NullNotifier()
+    sid = await store.create_session(mode="paper", exchange="fake", symbol="SOL/USDT", params={})
+    await store.save_state(sid, {"trader": {}}, status="stopped")
+    runner = _runner(_rest(), store, notifier)
+    assert await runner.setup() == []
+    assert "stays stopped" in notifier.sent[-1]
+    rearmed = _runner(_rest(), store, notifier, rearm_stopped=True)
+    assert len(await rearmed.setup()) == 1
+    assert len(store.sessions) == 2
+
+
+async def test_resume_prunes_events_after_snapshot() -> None:
+    store, notifier = InMemorySessionStore(), NullNotifier()
+    s = _session(store, notifier)
+    await s.open_new(Decimal(100), T0)
+    await s.persist(T0 + S, force=True)
+    runner = _runner(_rest(), store, notifier)
+    await runner.setup()
+    assert store.pruned_at == T0  # last_event of the snapshot the session resumed from
+
+
+async def test_unbuildable_pair_is_skipped_not_fatal() -> None:
+    store, notifier = InMemorySessionStore(), NullNotifier()
+    pairs = [
+        PairConfig(symbol="SOL/USDT", levels=5, range_width_pct=Decimal(20), capital_usd=Decimal(1)),
+    ]
+    runner = _runner(_rest(), store, notifier, pairs=pairs)
+    assert await runner.setup() == []
+    assert "skipped" in notifier.sent[-1]
+
+
+async def test_fills_force_snapshot_and_heartbeat() -> None:
+    store, notifier = InMemorySessionStore(), NullNotifier()
+    s = _session(store, notifier)
+    await s.open_new(Decimal(100), T0)
+    await s.on_trade(_tick(1, "94.9"))  # fill within the persist interval
+    assert store.sessions[1]["state"]["last_event"] == (T0 + S).isoformat()
+    await s.heartbeat(T0 + timedelta(minutes=3))
+    assert store.sessions[1]["state"]["heartbeat"] == (T0 + timedelta(minutes=3)).isoformat()

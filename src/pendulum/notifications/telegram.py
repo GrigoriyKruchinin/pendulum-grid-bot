@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Protocol
+from typing import Any, Protocol
 
 import httpx
 
@@ -81,7 +81,7 @@ class TelegramNotifier:
             if resp.status_code == 200:
                 return True
             if resp.status_code == 429:
-                retry_after = float(resp.json().get("parameters", {}).get("retry_after", 1))
+                retry_after = float(_json(resp).get("parameters", {}).get("retry_after", 1))
                 await asyncio.sleep(min(retry_after, 30))
                 continue
             if resp.status_code >= 500:
@@ -89,11 +89,20 @@ class TelegramNotifier:
                 continue
             # 4xx other than 429: bad markup or chat id. Log the description, never the URL (token).
             log.error(
-                "telegram_rejected", status=resp.status_code, description=resp.json().get("description")
+                "telegram_rejected", status=resp.status_code, description=_json(resp).get("description")
             )
             return False
         log.error("telegram_gave_up", attempts=self._max_attempts)
         return False
+
+
+def _json(resp: httpx.Response) -> dict[str, Any]:
+    """Response body as a dict; empty for non-JSON bodies (e.g. proxy HTML errors)."""
+    try:
+        body = resp.json()
+    except ValueError:
+        return {}
+    return body if isinstance(body, dict) else {}
 
 
 def make_notifier(settings: TelegramSettings | None = None) -> INotifier:

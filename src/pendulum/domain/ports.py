@@ -89,9 +89,15 @@ class ITradingSessionStore(Protocol):
 
     async def save_state(self, session_id: int, state: dict[str, Any], status: str | None = None) -> None: ...
 
-    async def get_running(
+    async def get_latest(
         self, mode: str, exchange: str, symbol: str
-    ) -> tuple[int, dict[str, Any]] | None: ...
+    ) -> tuple[int, str, dict[str, Any]] | None:
+        """Most recent session for a pair as ``(id, status, state)``."""
+        ...
+
+    async def prune_after(self, session_id: int, ts: datetime) -> None:
+        """Delete fills, cycles and orders recorded after ``ts`` (events newer than the last snapshot)."""
+        ...
 
     async def upsert_order(self, session_id: int, order: Order) -> None: ...
 

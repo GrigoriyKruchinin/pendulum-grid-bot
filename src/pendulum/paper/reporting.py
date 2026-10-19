@@ -7,9 +7,11 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 from pendulum.backtest.engine import GridParams, SimulationConfig, run_backtest
+from pendulum.backtest.resample import count_missing
+from pendulum.backtest.service import MAX_MISSING_SHARE
 from pendulum.config.settings import GridType
 from pendulum.domain.models import FeeModel, Symbol, Timeframe
-from pendulum.domain.money import ONE, ZERO
+from pendulum.domain.money import ONE, ZERO, bps
 from pendulum.domain.ports import ICandleStore, ISessionReader, SessionInfo
 from pendulum.exchanges.base import BaseExchangeAdapter
 from pendulum.market_data.loader import HistoryLoader, floor_time
@@ -22,6 +24,15 @@ DIVERGENCE_FLOOR = Decimal("0.01")  # of capital; avoids dividing by ~0 when the
 def _params(info: SessionInfo) -> GridParams:
     p = info.params
     return GridParams(int(p["levels"]), Decimal(p["width_pct"]), GridType(p["grid_type"]), p["exit_policy"])
+
+
+def _buy_hold(info: SessionInfo, start: Decimal, price: Decimal) -> Decimal:
+    """Buy & hold since session start with the same taker fee and slippage as the backtest."""
+    if start <= 0:
+        return ZERO
+    taker = Decimal(info.params.get("taker_fee", "0"))
+    slip = bps(Decimal(info.params.get("slippage_bps", "0")))
+    return price * (ONE - taker) / (start * (ONE + slip)) - ONE
 
 
 async def build_summaries(reader: ISessionReader, period: timedelta, now: datetime) -> list[PairSummary]:
@@ -49,7 +60,7 @@ async def build_summaries(reader: ISessionReader, period: timedelta, now: dateti
                 price=price,
                 lower=Decimal(prices[0]),
                 upper=Decimal(prices[-1]),
-                buy_hold_return=price / start_price - ONE if start_price > 0 else ZERO,
+                buy_hold_return=_buy_hold(info, start_price, price),
             )
         )
     return out
@@ -102,12 +113,16 @@ async def compare_session(
     bars = await candles.get_candles(adapter.exchange_id, info.symbol, Timeframe.M1, start, end)
     if not bars:
         return _with_error(base, "no candles for the session period")
+    missing = count_missing(bars, Timeframe.M1)
+    if missing / (len(bars) + missing) > MAX_MISSING_SHARE:
+        return _with_error(base, f"{missing} of {len(bars) + missing} candles missing (>1%)")
     instrument = await loader.resolve(Symbol.parse(info.symbol))
     p = info.params
     config = SimulationConfig(
         capital=capital,
         fees=FeeModel(Decimal(p["maker_fee"]), Decimal(p["taker_fee"])),
         slippage_bps=Decimal(p["slippage_bps"]),
+        min_step_fee_multiplier=Decimal(p.get("min_step_fee_multiplier", "1.5")),
         timeframe=Timeframe.M1,
     )
     result = await run_backtest(bars, instrument, _params(info), config)
