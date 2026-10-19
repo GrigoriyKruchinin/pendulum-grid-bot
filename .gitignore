@@ -218,3 +218,21 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- Pendulum project-specific ---
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+# Local database volumes and dumps
+pgdata/
+redisdata/
+*.dump
+*.sql.gz
+# Large historical market data exports
+data/
+*.parquet
+*.csv.gz
+# Generated reports scratch
+reports/tmp/
