@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/logo.svg" alt="Pendulum logo" width="180">
+<img src="docs/assets/logo.jpg" alt="Pendulum logo" width="180">
 
 # Pendulum
 
