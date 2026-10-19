@@ -413,4 +413,7 @@ async def run_backtest(
     """
     if not candles:
         raise ValueError("no candles")
+    if params.regime != "none" and config.timeframe not in (Timeframe.M1, Timeframe.M5):
+        # Regime filters count hourly closes; coarser bars would silently stretch their lookback.
+        raise ValueError(f"regime filter {params.regime!r} requires a 1m or 5m timeframe")
     return await _Simulation(candles, instrument, params, config).run(warmup, equity_sample)

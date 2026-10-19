@@ -85,6 +85,7 @@ A step-by-step guide (in Russian) is in [docs/guides/user-guide.md](docs/guides/
 
 Backtest options: `--levels`, `--width` (total range width, %), `--grid-type geometric|arithmetic`,
 `--exit stop_loss|wait|rebuild|trailing_up|<down>+<up>`, `--regime none|er72|er168`, `--capital`, `--tf 1m|5m`.
+Regime filters warm up on the 169 hours before `--since` (when stored) and require a 1m or 5m timeframe.
 
 Parameter spaces for walk-forward:
 
@@ -247,6 +248,7 @@ The analyzer can run unattended on a small server (2 vCPU / 4 GB), collecting da
   healthcheck. To roll back, run it with an older image tag.
 
 The deploy workflow runs only on manual dispatch, and only when the repository variable
-`DEPLOY_ENABLED=true` and the secrets `DEPLOY_HOST`, `DEPLOY_USER` and `DEPLOY_SSH_KEY` are set. The
+`DEPLOY_ENABLED=true` and the secrets `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY` and `DEPLOY_KNOWN_HOSTS`
+(pinned server host key) are set. The version input accepts only a git SHA or `vX.Y.Z`. The
 server keeps its own `.env`. **No deployment has been performed for this project;** the files are statically
 validated in CI only.

@@ -20,6 +20,8 @@ _Nothing in progress. New tasks and plans from the owner are added here._
 - [ ] Faster candle ingestion (asyncpg `COPY`) and lighter in-memory candle representation for multi-year runs
 - [ ] Regime filter support in paper sessions (currently backtest/walk-forward only)
 - [ ] Loader: track attempted spans as a list instead of a single contiguous checkpoint
+- [ ] Data-quality gate: count bars missing at the start/end of the requested range (today only first..last stored bar)
+- [ ] Walk-forward: warm up regime filters before the first train window (currently starts cold)
 - [ ] HTML/Chart.js report for walk-forward results (equity curves, per-window table)
 - [ ] Second exchange adapter (e.g. OKX or Binance) passing `tests/contract/`
 

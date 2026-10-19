@@ -1,7 +1,9 @@
 # Reference deployment of the analyzer stack to a VPS over SSH.
 #
 # Manual only (workflow_dispatch) and disabled unless the repository variable DEPLOY_ENABLED is "true".
-# Required secrets when enabled: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY (key of a dedicated deploy user).
+# Required secrets when enabled:
+#   DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY  - dedicated deploy user and its private key
+#   DEPLOY_KNOWN_HOSTS                         - the server's host key line(s) (`ssh-keyscan <host>`, verified once)
 # The server keeps its own `.env` (never stored in the repository or the image) next to docker-compose.yml.
 name: Deploy (reference)
 
@@ -9,25 +11,30 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Image tag to deploy (git SHA or vX.Y.Z); empty = build this commit"
+        description: "Image tag to deploy: 12-char git SHA or vX.Y.Z; empty = build this commit"
         required: false
         default: ""
 
 permissions:
   contents: read
-  packages: write
 
 jobs:
   image:
     name: Build and publish image
     if: ${{ vars.DEPLOY_ENABLED == 'true' && inputs.version == '' }}
     runs-on: ubuntu-24.04
+    environment: production
+    permissions:
+      contents: read
+      packages: write
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - id: meta
-        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then echo "release=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"; fi
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -42,6 +49,7 @@ jobs:
           tags: |
             ghcr.io/grigoriykruchinin/pendulum-grid-bot:${{ steps.meta.outputs.tag }}
             ghcr.io/grigoriykruchinin/pendulum-grid-bot:latest
+            ${{ steps.meta.outputs.release && format('ghcr.io/grigoriykruchinin/pendulum-grid-bot:{0}', steps.meta.outputs.release) || '' }}
 
   deploy:
     name: Deploy to server
@@ -50,26 +58,41 @@ jobs:
     if: ${{ always() && vars.DEPLOY_ENABLED == 'true' && (needs.image.result == 'success' || inputs.version != '') }}
     runs-on: ubuntu-24.04
     environment: production
+    permissions:
+      contents: read
     env:
       VERSION: ${{ inputs.version != '' && inputs.version || needs.image.outputs.tag }}
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install SSH key
+      - name: Validate version
+        # The tag is expanded by the remote shell, so only strict tag formats are accepted.
+        run: |
+          [[ "$VERSION" =~ ^(v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{7,40})$ ]] || { echo "invalid version"; exit 1; }
+      - name: Install SSH key and pinned host key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
         run: |
           install -m 700 -d ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
       - name: Upload compose file and config
         run: |
-          scp -i ~/.ssh/deploy_key docker-compose.yml "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/pendulum/"
-          scp -i ~/.ssh/deploy_key -r config "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/pendulum/"
-      - name: Pull, migrate, start, verify
+          opts=(-i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes)
+          scp "${opts[@]}" docker-compose.yml "$DEPLOY_USER@$DEPLOY_HOST:~/pendulum/"
+          scp "${opts[@]}" -r config "$DEPLOY_USER@$DEPLOY_HOST:~/pendulum/"
+      - name: Pull, migrate, start, wait for healthchecks
         run: |
-          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "cd ~/pendulum && export PENDULUM_VERSION=${VERSION} && \
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes "$DEPLOY_USER@$DEPLOY_HOST" \
+            "cd ~/pendulum && export PENDULUM_VERSION=$(printf %q "$VERSION") && \
              docker compose pull && \
              docker compose run --rm migrations && \
              docker compose up -d --remove-orphans && \
-             sleep 90 && \
-             test -z \"\$(docker compose ps --format '{{.Health}}' | grep -E 'unhealthy|starting')\""
+             for i in \$(seq 1 30); do \
+               states=\$(docker compose ps --format '{{.Health}}' | grep -E 'unhealthy|starting' || true); \
+               [ -z \"\$states\" ] && exit 0; sleep 10; \
+             done; docker compose ps; exit 1"

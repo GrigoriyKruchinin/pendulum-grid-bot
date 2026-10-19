@@ -31,7 +31,8 @@ from pendulum.domain.money import ONE, ZERO
 from pendulum.grid.regime import MAX_LOOKBACK_HOURS
 
 DAYS_PER_YEAR = Decimal(365)
-WARMUP = timedelta(hours=MAX_LOOKBACK_HOURS)
+# lookback + 1 hourly closes are needed before the filter has an opinion.
+WARMUP = timedelta(hours=MAX_LOOKBACK_HOURS + 1)
 
 
 @dataclass(frozen=True, slots=True)

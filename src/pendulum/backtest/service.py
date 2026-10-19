@@ -14,7 +14,7 @@ from pathlib import Path
 from pendulum.backtest.engine import BacktestResult, GridParams, SimulationConfig, run_backtest
 from pendulum.backtest.report import single_report, walk_forward_report
 from pendulum.backtest.resample import resample
-from pendulum.backtest.walk_forward import WalkForwardConfig, WalkForwardResult, run_walk_forward
+from pendulum.backtest.walk_forward import WARMUP, WalkForwardConfig, WalkForwardResult, run_walk_forward
 from pendulum.config.settings import BacktestSettings
 from pendulum.domain.models import Candle, FeeModel, Instrument, Symbol, Timeframe
 from pendulum.domain.ports import IBacktestRunStore, ICandleStore
@@ -101,6 +101,17 @@ class BacktestService:
             raise DataQualityError(f"{symbol}: {missing} of {expected} bars missing (>1%)")
         return out
 
+    async def _warmup(
+        self, symbol: Symbol, start: datetime, params: GridParams, config: SimulationConfig
+    ) -> list[Candle]:
+        """Bars right before ``start`` that feed the regime filter (empty without a filter or history)."""
+        if params.regime == "none":
+            return []
+        try:
+            return await self.load_candles(symbol, start - WARMUP, start, config.timeframe)
+        except DataQualityError:
+            return []  # no earlier history: the filter warms up inside the run
+
     async def run(
         self,
         symbol: Symbol,
@@ -114,7 +125,8 @@ class BacktestService:
         """Run, persist and (optionally) write a markdown report."""
         instrument = await self.loader.resolve(symbol)
         candles = await self.load_candles(symbol, start, end, config.timeframe)
-        result = await run_backtest(candles, instrument, params, config)
+        warmup = await self._warmup(symbol, start, params, config)
+        result = await run_backtest(candles, instrument, params, config, warmup=warmup)
         sha = git_sha()
         run_id = await self.runs.save_run(
             kind="single",

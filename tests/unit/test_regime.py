@@ -4,10 +4,11 @@ from decimal import Decimal
 
 import pytest
 
+from pendulum.backtest import engine
 from pendulum.backtest.engine import GridParams, SimulationConfig, run_backtest
-from pendulum.backtest.walk_forward import WARMUP, regime_param_grid
+from pendulum.backtest.walk_forward import WARMUP, baseline_param_grid, regime_param_grid
 from pendulum.config.settings import GridType
-from pendulum.domain.models import FeeModel
+from pendulum.domain.models import FeeModel, Timeframe
 from pendulum.grid.regime import EfficiencyRatioFilter, NoFilter, efficiency_ratio, make_regime_filter
 from tests.fakes import SOL
 from tests.synthetic import T0, series
@@ -78,4 +79,77 @@ def test_regime_grid_and_warmup_window() -> None:
     grid = regime_param_grid()
     assert len(grid) == 144
     assert {p.regime for p in grid} == {"none", "er72", "er168"}
-    assert timedelta(hours=168) == WARMUP
+    assert timedelta(hours=169) == WARMUP
+
+
+class ScriptedFilter:
+    """Test double: allows trading from bar ``start_bar`` on (counting every update)."""
+
+    name = "er72"
+
+    def __init__(self, start_bar: int = 0) -> None:
+        self.start_bar = start_bar
+        self.bars = 0
+
+    def update(self, close_time: object, close: Decimal) -> None:
+        self.bars += 1
+
+    def allows_trading(self) -> bool:
+        return self.bars >= self.start_bar
+
+    def snapshot(self) -> dict[str, object]:
+        return {}
+
+    def restore(self, state: dict[str, object]) -> None:
+        return None
+
+
+CFG = SimulationConfig(capital=Decimal(1000), fees=FeeModel(Decimal("0.001"), Decimal("0.001")))
+
+
+def _crash_then_range() -> list:  # type: ignore[type-arg]
+    rng1 = [100 + 2 * math.sin(2 * math.pi * i / 72) for i in range(288)]
+    crash = [100 - 30 * i / 24 for i in range(1, 25)]  # -30% in two hours: hits the stop-loss
+    rng2 = [70 + 2 * math.sin(2 * math.pi * i / 72) for i in range(288 * 3)]
+    return series(rng1 + crash + rng2)
+
+
+async def test_stop_loss_cooldown_and_totals_across_grids(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(engine, "make_regime_filter", lambda name: ScriptedFilter())
+    candles = _crash_then_range()
+    sim = engine._Simulation(
+        candles, SOL, GridParams(10, Decimal(10), GridType.GEOMETRIC, "stop_loss", "er72"), CFG
+    )
+    r = await sim.run([], timedelta(hours=1))
+    assert r.stopped
+    assert len(sim.traders) >= 2  # re-entered after the stop
+    entries = [f for f in sim.gateway.market_fills if "-m" in f.client_id]
+    stops = [f for f in sim.gateway.market_fills if "-x" in f.client_id]
+    second_entry = next(f for f in entries if f.client_id.startswith("bt1-"))
+    assert second_entry.ts - stops[0].ts >= engine.STOP_COOLDOWN
+    assert r.cycles == sum(t.cycle_count for t in sim.traders)
+    assert r.realized == sum((t.realized_profit for t in sim.traders), Decimal(0))
+
+
+async def test_plan_error_on_first_delayed_entry_keeps_cash(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(engine, "make_regime_filter", lambda name: ScriptedFilter(start_bar=10))
+    tiny = SimulationConfig(capital=Decimal(20), fees=CFG.fees)
+    params = GridParams(10, Decimal(10), GridType.GEOMETRIC, "wait", "er72")
+    r = await engine.run_backtest(series([100.0] * 50), SOL, params, tiny)
+    assert r.error is not None
+    assert r.bars_active == 0
+    assert r.net_return == 0
+
+
+async def test_regime_filter_rejects_coarse_timeframes() -> None:
+    cfg = SimulationConfig(capital=Decimal(1000), fees=CFG.fees, timeframe=Timeframe.H1)
+    with pytest.raises(ValueError, match="1m or 5m"):
+        await engine.run_backtest(
+            series([100.0] * 5), SOL, GridParams(10, Decimal(10), GridType.GEOMETRIC, "wait", "er72"), cfg
+        )
+
+
+def test_baseline_grid_is_regime_grid_without_filters() -> None:
+    base = baseline_param_grid()
+    assert len(base) == 48
+    assert all(p.regime == "none" for p in base)
