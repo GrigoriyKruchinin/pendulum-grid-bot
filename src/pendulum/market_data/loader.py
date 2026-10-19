@@ -7,6 +7,7 @@ re-requested on every run unless ``refetch_gaps`` is set.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -66,8 +67,10 @@ class HistoryLoader:
         candles: ICandleStore,
         instruments: IInstrumentStore,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        concurrency: int = 8,
     ) -> None:
         self._adapter = adapter
+        self._concurrency = max(1, concurrency)
         self._candles = candles
         self._instruments = instruments
         self._now = now
@@ -122,19 +125,32 @@ class HistoryLoader:
                 and gap.end <= checkpoint.last_open_time
             ):
                 continue  # already attempted: the exchange has no data here
+            spans: list[tuple[datetime, datetime]] = []
             cursor = gap.start
             while cursor <= gap.end:
-                chunk_end = min(gap.end, cursor + chunk)
-                candles = await self._adapter.rest.fetch_candles(inst, timeframe, cursor, chunk_end)
-                report.requests += 1
-                candles = [c for c in candles if cursor <= c.open_time <= chunk_end]
-                report.fetched += await self._candles.upsert_candles(self._exchange, sym, timeframe, candles)
+                spans.append((cursor, min(gap.end, cursor + chunk)))
+                cursor = spans[-1][1] + step
+            # Fetch a batch of chunks concurrently (network latency dominates), then store them in order
+            # and advance the checkpoint, so an interrupted run resumes after the last stored batch.
+            for i in range(0, len(spans), self._concurrency):
+                batch = spans[i : i + self._concurrency]
+                results = await asyncio.gather(
+                    *(self._adapter.rest.fetch_candles(inst, timeframe, a, b) for a, b in batch)
+                )
+                report.requests += len(batch)
+                rows = [
+                    c
+                    for (a, b), got in zip(batch, results, strict=True)
+                    for c in got
+                    if a <= c.open_time <= b
+                ]
+                report.fetched += await self._candles.upsert_candles(self._exchange, sym, timeframe, rows)
+                batch_end = batch[-1][1]
                 checkpoint = Checkpoint(
                     min(checkpoint.first_open_time, gap.start) if checkpoint else gap.start,
-                    max(checkpoint.last_open_time, chunk_end) if checkpoint else chunk_end,
+                    max(checkpoint.last_open_time, batch_end) if checkpoint else batch_end,
                 )
                 await self._candles.save_checkpoint(self._exchange, sym, timeframe, checkpoint)
-                cursor = chunk_end + step
 
         report.remaining_gaps = await self._candles.find_gaps(
             self._exchange, sym, timeframe, start, end + step
