@@ -102,6 +102,28 @@ class MarketFilters:
 
 
 @dataclass(frozen=True, slots=True)
+class FeeModel:
+    """Fee schedule and how the exchange charges it.
+
+    ``fee_in_received_asset``: buy fees are taken from the received base coin and sell fees from the
+    received quote (Bybit spot behaviour). Otherwise all fees are charged in quote.
+    """
+
+    maker: Decimal
+    taker: Decimal
+    fee_in_received_asset: bool = True
+
+    def __post_init__(self) -> None:
+        if not (ZERO <= self.maker < 1 and ZERO <= self.taker < 1):
+            raise ValueError("fees must be fractions in [0, 1)")
+
+    @property
+    def round_trip_maker(self) -> Decimal:
+        """Approximate fee fraction paid on a maker buy + maker sell."""
+        return self.maker * 2
+
+
+@dataclass(frozen=True, slots=True)
 class Instrument:
     """A tradable symbol with its exchange filters."""
 

@@ -61,11 +61,11 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] CLI: `pendulum data load --pairs ... --tf 1m --since ...`
 
 ### 1.7 Grid engine
-- [ ] `IGridStrategy` + `ArithmeticGrid`, `GeometricGrid` (default)
-- [ ] Level/size calculation respecting exchange filters; skip levels whose step ≤ round-trip fees + margin
-- [ ] Capital allocation per level (quote/base split at start price)
-- [ ] `IRangeExitPolicy`: `StopLossExit`, `WaitExit`, `RebuildExit`, `TrailingUpExit`
-- [ ] Property tests (monotonic levels, filters respected, no negative balances)
+- [x] `IGridStrategy` + `ArithmeticGrid`, `GeometricGrid` (default)
+- [x] Level/size calculation respecting exchange filters; skip levels whose step ≤ round-trip fees + margin
+- [x] Capital allocation per level (quote/base split at start price)
+- [x] `IRangeExitPolicy`: `StopLossExit`, `WaitExit`, `RebuildExit`, `TrailingUpExit`
+- [x] Property tests (monotonic levels, filters respected, no negative balances)
 
 ### 1.8 Fill simulator & backtester
 - [ ] Conservative fill simulator: cross-not-touch, worst-case intra-candle sequence, maker fee per fill,
