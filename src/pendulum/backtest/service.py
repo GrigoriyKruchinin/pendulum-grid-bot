@@ -8,24 +8,26 @@ import shutil
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from pendulum.backtest.engine import BacktestResult, GridParams, SimulationConfig, run_backtest
 from pendulum.backtest.report import single_report, walk_forward_report
-from pendulum.backtest.resample import count_missing, resample
+from pendulum.backtest.resample import resample
 from pendulum.backtest.walk_forward import WalkForwardConfig, WalkForwardResult, run_walk_forward
 from pendulum.config.settings import BacktestSettings
 from pendulum.domain.models import Candle, FeeModel, Instrument, Symbol, Timeframe
 from pendulum.domain.ports import IBacktestRunStore, ICandleStore
 from pendulum.exchanges.base import BaseExchangeAdapter
 from pendulum.logging import get_logger
-from pendulum.market_data.loader import HistoryLoader
+from pendulum.market_data.loader import HistoryLoader, floor_time
 
 log = get_logger(__name__)
 REPORTS_DIR = Path("docs/reports/backtests")
 WF_REPORTS_DIR = Path("docs/reports/walk-forward")
 MAX_MISSING_SHARE = 0.01  # refuse to simulate on data with >1% missing bars
+# A multiple of every timeframe: with aligned chunk starts, resample buckets never straddle chunks.
+LOAD_CHUNK = timedelta(days=30)
 
 
 class DataQualityError(ValueError):
@@ -68,17 +70,36 @@ class BacktestService:
     async def load_candles(
         self, symbol: Symbol, start: datetime, end: datetime, timeframe: Timeframe
     ) -> list[Candle]:
-        """Stored 1m candles resampled to ``timeframe``; raises on poor data quality."""
+        """Stored 1m candles resampled to ``timeframe``; raises on poor data quality.
+
+        Reads in day-aligned chunks so a year of 1m bars never sits in memory at once.
+        """
         source = Timeframe(self.settings.default_timeframe)
-        raw = await self.candles.get_candles(self.adapter.exchange_id, str(symbol), source, start, end)
-        if not raw:
+        out: list[Candle] = []
+        present = 0
+        first: datetime | None = None
+        last: datetime | None = None
+        cursor = floor_time(start, timeframe)
+        while cursor < end:
+            chunk_end = min(end, cursor + LOAD_CHUNK)
+            raw = await self.candles.get_candles(
+                self.adapter.exchange_id, str(symbol), source, max(cursor, start), chunk_end
+            )
+            if raw:
+                present += len(raw)
+                first = first or raw[0].open_time
+                last = raw[-1].open_time
+                out.extend(resample(raw, source, timeframe))
+            cursor = chunk_end
+        if first is None or last is None:
             raise DataQualityError(
                 f"no {source.value} candles for {symbol} in {start:%F}..{end:%F}; run data load"
             )
-        missing = count_missing(raw, source)
-        if missing / (len(raw) + missing) > MAX_MISSING_SHARE:
-            raise DataQualityError(f"{symbol}: {missing} of {len(raw) + missing} bars missing (>1%)")
-        return resample(raw, source, timeframe)
+        expected = int((last - first).total_seconds()) // source.seconds + 1
+        missing = expected - present
+        if missing / expected > MAX_MISSING_SHARE:
+            raise DataQualityError(f"{symbol}: {missing} of {expected} bars missing (>1%)")
+        return out
 
     async def run(
         self,

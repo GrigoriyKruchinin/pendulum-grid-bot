@@ -4,7 +4,9 @@ from pathlib import Path
 
 import pytest
 
+from pendulum.backtest import service
 from pendulum.backtest.engine import GridParams, SimulationConfig
+from pendulum.backtest.resample import resample
 from pendulum.backtest.service import BacktestService, DataQualityError, git_sha
 from pendulum.config.settings import BacktestSettings, GridType
 from pendulum.domain.models import FeeModel, Timeframe
@@ -55,3 +57,17 @@ async def test_service_refuses_gappy_data() -> None:
 def test_git_sha_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GIT_SHA", "deadbeef")
     assert git_sha() == "deadbeef"
+
+
+async def test_chunked_load_matches_single_resample(monkeypatch: pytest.MonkeyPatch) -> None:
+
+    store = InMemoryCandleStore()
+    one_min = series([100 + (i % 37) * 0.1 for i in range(3 * 1440)], minutes=1)
+    await store.upsert_candles("fake", "SOL/USDT", Timeframe.M1, one_min)
+    monkeypatch.setattr(service, "LOAD_CHUNK", timedelta(hours=7))
+    start = T0 + timedelta(minutes=3)  # not aligned to 5m
+    got = await _svc(store, InMemoryRunStore()).load_candles(
+        SOL.symbol, start, T0 + timedelta(days=3), Timeframe.M5
+    )
+    expected = resample([c for c in one_min if c.open_time >= start], Timeframe.M1, Timeframe.M5)
+    assert got == expected
