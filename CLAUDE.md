@@ -28,12 +28,14 @@ explicit Go decision by the owner.
 | Go/No-Go | ≥ 60% OOS windows net-positive; mean OOS annualized ≥ 15% and > buy & hold; max DD ≤ 20%; paper ≥ 14 days, divergence vs backtest ≤ 20%; not carried by 1–2 lucky windows/pairs. |
 | VPS budget | ≤ $10/month (2 vCPU / 4 GB). |
 | Dashboard auth | `ADMIN_USERNAME` + `ADMIN_PASSWORD_HASH` (bcrypt) from `.env`. |
+| REST client | Own `httpx` client per exchange (Bybit V5 returns numeric strings → exact `Decimal`). |
 | Owner location | Argentina, RU passport — keep exchange availability/KYC in mind, keep adapters swappable. |
 
 ## Stack
 
 Python 3.12 · `uv` · pydantic v2 + pydantic-settings · PostgreSQL + SQLAlchemy (async) + Alembic · Redis + Celery ·
-ccxt (REST base, hidden behind own adapter interfaces) + native WebSocket · pandas/numpy (backtest/analytics only) ·
+native `httpx` REST + `websockets` per exchange behind own adapter interfaces (ccxt rejected for Bybit: it returns
+floats; may back future adapters if wrapped with Decimal conversion) · pandas/numpy (backtest/analytics only) ·
 pytest + pytest-asyncio + hypothesis · ruff · mypy --strict · Docker Compose.
 
 ## Commands (Makefile is created in Stage 1)

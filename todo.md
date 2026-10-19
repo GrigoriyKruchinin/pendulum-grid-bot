@@ -1,7 +1,7 @@
 # Pendulum — TODO
 
 Legend: `[x]` done and verified · `[ ]` open (status note in parentheses if partially done).
-Current stage: **Stage 0** — waiting for the owner's "Start Implementation".
+Current stage: **Stage 1** (branch `stage-1-mvp`).
 
 ---
 
@@ -15,18 +15,18 @@ Current stage: **Stage 0** — waiting for the owner's "Start Implementation".
 - [x] Git: `.gitignore` (project additions), `.env.example`, `origin` connected, first commit + push
 - [x] `README.md` header + `docs/assets/logo.svg`
 - [x] `docs/guides/stage-1-user-guide.md`
-- [ ] Owner says "Start Implementation"
+- [x] Owner says "Start Implementation"
 
 ---
 
 ## Stage 1 — MVP + data (read-only, no real money) · branch `stage-1-mvp` · tag `v0.1.0`
 
 ### 1.1 Project skeleton
-- [ ] `pyproject.toml` (uv, Python 3.12), `uv.lock`, src layout `src/pendulum/`
-- [ ] ruff + mypy strict + pytest/pytest-asyncio/hypothesis config
-- [ ] `Makefile` (install, lint, format, typecheck, test, check, up, down, migrate, data-load, backtest)
-- [ ] Structured logging with secret redaction
-- [ ] Multi-stage `Dockerfile` (non-root user, uv cache)
+- [x] `pyproject.toml` (uv, Python 3.12), `uv.lock`, src layout `src/pendulum/`
+- [x] ruff + mypy strict + pytest/pytest-asyncio/hypothesis config
+- [x] `Makefile` (install, lint, format, typecheck, test, check, up, down, migrate, data-load, backtest)
+- [x] Structured logging with secret redaction
+- [ ] Multi-stage `Dockerfile` (non-root user, uv cache) (written; build verified in 1.13)
 
 ### 1.2 Configuration
 - [ ] Modular Pydantic Settings: `AppSettings`, `DatabaseSettings`, `RedisSettings`, `ExchangeSettings`,

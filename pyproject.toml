@@ -1,0 +1,83 @@
+[project]
+name = "pendulum"
+version = "0.1.0.dev0"
+description = "Async grid trading bot for the crypto spot market: backtest, paper-trade, then trade sideways ranges."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary" }
+dependencies = [
+    "pydantic>=2.14,<3",
+    "pydantic-settings>=2.16,<3",
+    "sqlalchemy[asyncio]>=2.1,<2.2",
+    "asyncpg>=0.32,<0.33",
+    "alembic>=1.20,<2",
+    "celery>=5.6,<6",
+    "redis>=8.1,<9",
+    "httpx>=0.28,<0.29",
+    "websockets>=17.2,<18",
+    "structlog>=26.1",
+    "typer>=0.27,<0.28",
+    "pandas>=3.0,<4",
+    "numpy>=2.5,<3",
+]
+
+[project.scripts]
+pendulum = "pendulum.cli.main:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=9",
+    "pytest-asyncio>=1.3",
+    "hypothesis>=6.140",
+    "ruff>=0.14",
+    "mypy>=1.19",
+    "pandas-stubs>=2.3",
+    "respx>=0.22",
+]
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pendulum"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+src = ["src", "tests"]
+extend-exclude = ["src/pendulum/storage/migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP", "N", "S", "SIM", "RUF", "ASYNC", "DTZ", "PL", "PT", "TID", "T20"]
+ignore = [
+    "PLR0913",  # domain constructors legitimately take many parameters
+    "PLR2004",  # magic numbers are fine in financial formulas and tests
+    "RUF001",   # unicode in Telegram templates is intentional
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "PLR0915", "S105", "S106"]
+"src/pendulum/storage/migrations/**" = ["N999"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"decimal.Decimal.from_float".msg = "Construct Decimal from str, never from float."
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["pendulum"]
+plugins = ["pydantic.mypy"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = ["celery.*", "kombu.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["integration: requires running Postgres/Redis or network access"]
+addopts = "-m 'not integration' --strict-markers"
