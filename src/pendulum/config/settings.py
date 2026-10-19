@@ -110,6 +110,8 @@ class GridSettings(BaseSettings):
     default_type: GridType = GridType.GEOMETRIC
     default_levels: int = Field(default=20, ge=2, le=200)
     min_step_fee_multiplier: Decimal = Field(default=Decimal("1.5"), ge=1)
+    default_width_pct: Decimal = Field(default=Decimal("16"), gt=0, lt=200)
+    default_exit_policy: str = "stop_loss+trailing_up"
     quote_asset: str = "USDT"
     pairs_file: str = "config/pairs.toml"
 

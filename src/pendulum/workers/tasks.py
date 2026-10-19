@@ -10,6 +10,7 @@ from pendulum.config.settings import BacktestSettings, GridSettings
 from pendulum.container import build_container, setup_logging
 from pendulum.domain.models import Symbol, Timeframe
 from pendulum.logging import get_logger
+from pendulum.paper.service import send_summary
 from pendulum.workers.celery_app import celery_app
 
 log = get_logger(__name__)
@@ -50,3 +51,23 @@ def scan_pairs() -> None:
     """Beat: Mondays 01:00 UTC."""
     setup_logging()
     asyncio.run(scan_pairs_async())
+
+
+async def summary_async(days: int) -> None:
+    """Send the paper summary for the last ``days`` days."""
+    async with build_container() as c:
+        await send_summary(c, days, send=True)
+
+
+@celery_app.task(name="pendulum.daily_summary")  # type: ignore[untyped-decorator]
+def daily_summary() -> None:
+    """Beat: daily 00:05 UTC."""
+    setup_logging()
+    asyncio.run(summary_async(1))
+
+
+@celery_app.task(name="pendulum.weekly_summary")  # type: ignore[untyped-decorator]
+def weekly_summary() -> None:
+    """Beat: Mondays 00:15 UTC."""
+    setup_logging()
+    asyncio.run(summary_async(7))

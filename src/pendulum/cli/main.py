@@ -10,20 +10,27 @@ from typing import Annotated, Any
 
 import typer
 
-from pendulum.backtest.criteria import evaluate_backtest_criteria
+from pendulum.backtest.criteria import GoNoGoCriteria, evaluate_backtest_criteria
 from pendulum.backtest.engine import GridParams, SimulationConfig
 from pendulum.backtest.report import pct
 from pendulum.backtest.service import DataQualityError
 from pendulum.backtest.walk_forward import WalkForwardConfig, default_param_grid, quick_param_grid
-from pendulum.config.settings import BacktestSettings, GridType, RiskSettings
+from pendulum.config.pairs import load_pairs
+from pendulum.config.settings import BacktestSettings, GridSettings, GridType, RiskSettings
 from pendulum.container import build_container, setup_logging
 from pendulum.domain.models import Symbol, Timeframe
+from pendulum.notifications.telegram import make_notifier
+from pendulum.paper.reporting import comparison_lines
+from pendulum.paper.runner import PaperRunner
+from pendulum.paper.service import compare_all, send_summary
 
 app = typer.Typer(help="Pendulum grid bot.", no_args_is_help=True)
 data_app = typer.Typer(help="Market data.", no_args_is_help=True)
 app.add_typer(data_app, name="data")
 scan_app = typer.Typer(help="Pair scanner.", no_args_is_help=True)
 app.add_typer(scan_app, name="scan")
+paper_app = typer.Typer(help="Paper trading on live data.", no_args_is_help=True)
+app.add_typer(paper_app, name="paper")
 backtest_app = typer.Typer(help="Backtests and walk-forward optimisation.", no_args_is_help=True)
 app.add_typer(backtest_app, name="backtest")
 
@@ -207,6 +214,56 @@ def scan_run() -> None:
                     f"{i:>3} {m.symbol:<12} {m.score:>7.2f} {m.hourly_range:>9.2%} "
                     f"{m.efficiency_ratio:>6.3f} {m.drift:>8.1%} {m.volume_24h_usd / 1e6:>8.1f}"
                 )
+
+    run(_main())
+
+
+@paper_app.command("run")
+def paper_run() -> None:
+    """Run paper trading for enabled pairs in config/pairs.toml (long-running)."""
+
+    async def _main() -> None:
+        async with build_container() as c:
+            grid = GridSettings()
+            notifier = make_notifier()
+            runner = PaperRunner(
+                adapter=c.adapter,
+                store=c.sessions,
+                notifier=notifier,
+                pairs=load_pairs(grid.pairs_file).enabled(),
+                grid=grid,
+                risk=RiskSettings(),
+                backtest=BacktestSettings(),
+            )
+            await runner.run()
+
+    run(_main())
+
+
+@paper_app.command("summary")
+def paper_summary(
+    days: Annotated[int, typer.Option(help="Period in days (1 = daily, 7 = weekly)")] = 1,
+    send: Annotated[bool, typer.Option(help="Also send to Telegram")] = False,
+) -> None:
+    """Print (and optionally send) the paper summary."""
+
+    async def _main() -> None:
+        async with build_container() as c:
+            await send_summary(c, days, send=send, echo=True)
+
+    run(_main())
+
+
+@paper_app.command("compare")
+def paper_compare() -> None:
+    """Compare every paper session with a backtest of the same period; writes a report."""
+
+    async def _main() -> None:
+        async with build_container() as c:
+            rows, path = await compare_all(c)
+            for line in comparison_lines(rows, GoNoGoCriteria().max_paper_divergence):
+                typer.echo(line)
+            typer.echo(f"report: {path}")
 
     run(_main())
 

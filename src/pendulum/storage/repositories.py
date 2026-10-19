@@ -21,7 +21,7 @@ from pendulum.domain.models import (
     Symbol,
     Timeframe,
 )
-from pendulum.domain.ports import Checkpoint, Gap
+from pendulum.domain.ports import Checkpoint, Gap, SessionInfo
 from pendulum.storage.db import Database
 from pendulum.storage.models import (
     BacktestRunRow,
@@ -406,6 +406,36 @@ class TradingSessionRepository:
         )
         async with self._db.transaction() as session:
             await session.execute(stmt)
+
+
+class SessionReadRepository:
+    """``ISessionReader`` on PostgreSQL."""
+
+    def __init__(self, db: Database) -> None:
+        self._db = db
+
+    async def list_sessions(self, mode: str, statuses: Sequence[str]) -> list[SessionInfo]:
+        """Sessions of ``mode`` with one of ``statuses``, oldest first."""
+        stmt = (
+            select(TradingSessionRow)
+            .where(TradingSessionRow.mode == mode, TradingSessionRow.status.in_(list(statuses)))
+            .order_by(TradingSessionRow.id)
+        )
+        async with self._db.sessions() as session:
+            rows = (await session.scalars(stmt)).all()
+        return [
+            SessionInfo(r.id, r.mode, r.exchange, r.symbol, r.status, r.params, r.state, r.started_at)
+            for r in rows
+        ]
+
+    async def cycle_stats(self, session_id: int, since: datetime) -> tuple[int, Decimal]:
+        """Number and net profit sum of cycles closed since ``since``."""
+        stmt = select(func.count(CycleRow.id), func.coalesce(func.sum(CycleRow.net_profit), 0)).where(
+            CycleRow.session_id == session_id, CycleRow.closed_at >= since
+        )
+        async with self._db.sessions() as session:
+            count, total = (await session.execute(stmt)).one()
+        return int(count), Decimal(total)
 
 
 class ScannerRepository:

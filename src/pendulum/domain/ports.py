@@ -102,6 +102,28 @@ class ITradingSessionStore(Protocol):
     async def add_equity_point(self, session_id: int, point: EquityPoint) -> None: ...
 
 
+@dataclass(frozen=True, slots=True)
+class SessionInfo:
+    """Read model of a trading session."""
+
+    id: int
+    mode: str
+    exchange: str
+    symbol: str
+    status: str
+    params: dict[str, Any]
+    state: dict[str, Any]
+    started_at: datetime
+
+
+class ISessionReader(Protocol):
+    """Read side for reporting on paper/live sessions."""
+
+    async def list_sessions(self, mode: str, statuses: Sequence[str]) -> list[SessionInfo]: ...
+
+    async def cycle_stats(self, session_id: int, since: datetime) -> tuple[int, Decimal]: ...
+
+
 class IScannerStore(Protocol):
     """Pair scanner results persistence."""
 

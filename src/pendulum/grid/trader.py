@@ -12,11 +12,12 @@ from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 
+from pendulum.config.settings import GridType
 from pendulum.domain.models import Cycle, FeeModel, Fill, MarketFilters, Order, Side, Symbol
 from pendulum.domain.money import ZERO
 from pendulum.execution.gateway import IOrderGateway, OrderRejectedError
 from pendulum.grid.exit_policies import ExitAction, IRangeExitPolicy
-from pendulum.grid.plan import GridPlan
+from pendulum.grid.plan import GridPlan, GridSpec
 from pendulum.logging import get_logger
 
 log = get_logger(__name__)
@@ -84,6 +85,9 @@ class GridTrader:
         self.cycles: list[Cycle] = []
         self.active = False
         self.rebuilds = 0
+        # Totals carried over from before a restore (cycles themselves are persisted elsewhere).
+        self._realized_carry = ZERO
+        self._cycles_carry = 0
 
     # -- helpers ----------------------------------------------------------------------------------
 
@@ -246,18 +250,61 @@ class GridTrader:
 
     @property
     def realized_profit(self) -> Decimal:
-        """Sum of completed cycle net profits."""
-        return sum((c.net_profit for c in self.cycles), ZERO)
+        """Sum of completed cycle net profits (including cycles before a restore)."""
+        return self._realized_carry + sum((c.net_profit for c in self.cycles), ZERO)
+
+    @property
+    def cycle_count(self) -> int:
+        """Completed cycles (including those before a restore)."""
+        return self._cycles_carry + len(self.cycles)
 
     def snapshot(self) -> dict[str, Any]:
         """State for persistence and resume."""
+        plan = self.plan
         return {
-            "plan": self.plan.spec.to_dict(),
-            "prices": [str(p) for p in self.plan.prices],
+            "plan": plan.spec.to_dict(),
+            "prices": [str(p) for p in plan.prices],
+            "slot_qty": [str(q) for q in plan.slot_qty],
+            "skipped_levels": plan.skipped_levels,
+            "min_step_ratio": str(plan.min_step_ratio),
             "slots": [s.to_dict() for s in self.slots],
             "seq": self._seq,
-            "cycles": len(self.cycles),
+            "cycles": self.cycle_count,
             "realized": str(self.realized_profit),
             "rebuilds": self.rebuilds,
             "active": self.active,
         }
+
+    def restore(self, state: dict[str, Any]) -> None:
+        """Load a ``snapshot()``; orders must already exist in the executor."""
+        spec_d = state["plan"]
+        spec = GridSpec(
+            Decimal(spec_d["lower"]),
+            Decimal(spec_d["upper"]),
+            int(spec_d["levels"]),
+            GridType(spec_d["grid_type"]),
+            Decimal(spec_d["capital_quote"]),
+        )
+        self.plan = GridPlan(
+            spec,
+            tuple(Decimal(p) for p in state["prices"]),
+            tuple(Decimal(q) for q in state["slot_qty"]),
+            int(state["skipped_levels"]),
+            Decimal(state["min_step_ratio"]),
+        )
+        self._init_slots(self.plan)
+        for slot, d in zip(self.slots, state["slots"], strict=True):
+            slot.holding = Holding(d["holding"])
+            slot.base_qty = Decimal(d["base_qty"])
+            slot.cost_quote = Decimal(d["cost_quote"])
+            slot.entry_price = Decimal(d["entry_price"])
+            slot.opened_at = datetime.fromisoformat(d["opened_at"]) if d["opened_at"] else None
+            slot.order_id = d["order_id"]
+            if slot.order_id is not None:
+                self._by_order[slot.order_id] = slot
+        self._seq = int(state["seq"])
+        self.cycles = []
+        self._cycles_carry = int(state["cycles"])
+        self._realized_carry = Decimal(state["realized"])
+        self.rebuilds = int(state["rebuilds"])
+        self.active = bool(state["active"])

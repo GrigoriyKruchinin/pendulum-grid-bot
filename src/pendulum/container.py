@@ -26,6 +26,7 @@ from pendulum.storage.repositories import (
     CandleRepository,
     InstrumentRepository,
     ScannerRepository,
+    SessionReadRepository,
     TradingSessionRepository,
 )
 
@@ -41,6 +42,7 @@ class Container:
     backtests: BacktestRunRepository
     sessions: TradingSessionRepository
     scanner: ScannerRepository
+    session_reader: SessionReadRepository
 
     @property
     def loader(self) -> HistoryLoader:
@@ -78,6 +80,7 @@ async def build_container() -> AsyncIterator[Container]:
             backtests=BacktestRunRepository(db),
             sessions=TradingSessionRepository(db),
             scanner=ScannerRepository(db),
+            session_reader=SessionReadRepository(db),
         )
     finally:
         await adapter.aclose()

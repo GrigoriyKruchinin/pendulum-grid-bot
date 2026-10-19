@@ -23,6 +23,7 @@ from pendulum.storage.repositories import (
     CandleRepository,
     InstrumentRepository,
     ScannerRepository,
+    SessionReadRepository,
     TradingSessionRepository,
 )
 
@@ -115,3 +116,17 @@ async def test_trading_session_flow(db: Database) -> None:
     assert await repo.get_running("paper", "bybit", "SOL/USDT") == (sid, {"orders": 1})
     await repo.save_state(sid, {"orders": 0}, status="stopped")
     assert await repo.get_running("paper", "bybit", "SOL/USDT") is None
+
+
+async def test_session_reader(db: Database) -> None:
+    repo = TradingSessionRepository(db)
+    sid = await repo.create_session(mode="paper", exchange="bybit", symbol="SOL/USDT", params={"levels": 10})
+    await repo.add_cycle(sid, Cycle(1, Decimal(100), Decimal(102), Decimal(1), Decimal("0.2"), T0, T0 + M))
+    await repo.add_cycle(
+        sid, Cycle(1, Decimal(100), Decimal(102), Decimal(1), Decimal("0.2"), T0, T0 + 10 * M)
+    )
+    reader = SessionReadRepository(db)
+    sessions = await reader.list_sessions("paper", ["running"])
+    assert [s.id for s in sessions] == [sid]
+    assert await reader.cycle_stats(sid, T0 + 5 * M) == (1, Decimal("1.8"))
+    assert await reader.list_sessions("live", ["running"]) == []

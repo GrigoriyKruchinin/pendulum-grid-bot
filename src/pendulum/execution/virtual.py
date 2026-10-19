@@ -18,6 +18,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pendulum.domain.models import (
     Balances,
@@ -232,6 +233,55 @@ class VirtualExchange:
         """Total account value in quote at ``price``."""
         return self.balances.total_quote + self.balances.total_base * price
 
+    def snapshot(self) -> dict[str, Any]:
+        """JSON-friendly state (balances, resting orders, counters)."""
+        b = self.balances
+        return {
+            "balances": {
+                "base": str(b.base),
+                "quote": str(b.quote),
+                "locked_base": str(b.locked_base),
+                "locked_quote": str(b.locked_quote),
+            },
+            "orders": [
+                {
+                    "client_id": r.order.client_id,
+                    "side": r.order.side.value,
+                    "price": str(r.order.price),
+                    "qty": str(r.order.qty),
+                    "level_index": r.order.level_index,
+                    "created_at": r.order.created_at.isoformat(),
+                    "placed_at": r.placed_at.isoformat(),
+                }
+                for r in self._orders.values()
+            ],
+            "fees_paid_quote": str(self.fees_paid_quote),
+            "fill_count": self.fill_count,
+        }
+
+    def restore(self, state: dict[str, Any]) -> None:
+        """Load a ``snapshot()`` (replaces balances and orders)."""
+        b = state["balances"]
+        self.balances = Balances(
+            Decimal(b["base"]), Decimal(b["quote"]), Decimal(b["locked_base"]), Decimal(b["locked_quote"])
+        )
+        self._orders = {}
+        for o in state["orders"]:
+            order = Order(
+                o["client_id"],
+                self.symbol,
+                Side(o["side"]),
+                Decimal(o["price"]),
+                Decimal(o["qty"]),
+                int(o["level_index"]),
+                datetime.fromisoformat(o["created_at"]),
+                status=OrderStatus.OPEN,
+            )
+            self._orders[order.client_id] = _Resting(order, datetime.fromisoformat(o["placed_at"]))
+        self.fees_paid_quote = Decimal(state["fees_paid_quote"])
+        self.fill_count = int(state["fill_count"])
+        self._refresh_best()
+
 
 class VirtualOrderGateway:
     """``IOrderGateway`` over a ``VirtualExchange``; the driver advances ``clock`` and ``last_price``."""
@@ -240,10 +290,21 @@ class VirtualOrderGateway:
         self.exchange = exchange
         self._clock = clock
         self.last_price: Decimal | None = None
+        # Event journal for persistence by the driver (drained with ``drain_events``).
+        self.placed: list[Order] = []
+        self.market_fills: list[Fill] = []
+
+    def drain_events(self) -> tuple[list[Order], list[Fill]]:
+        """Return and clear orders placed and market fills since the last call."""
+        placed, fills = self.placed, self.market_fills
+        self.placed, self.market_fills = [], []
+        return placed, fills
 
     async def place_limit(self, order: Order) -> Order:
         """Rest a limit order."""
-        return self.exchange.place_limit(order, self._clock())
+        placed = self.exchange.place_limit(order, self._clock())
+        self.placed.append(placed)
+        return placed
 
     async def cancel_order(self, client_id: str) -> None:
         """Cancel a resting order."""
@@ -253,7 +314,9 @@ class VirtualOrderGateway:
         """Execute at ``last_price`` with slippage."""
         if self.last_price is None:
             raise OrderRejectedError("no reference price yet")
-        return self.exchange.market(client_id, side, qty, self.last_price, self._clock())
+        fill = self.exchange.market(client_id, side, qty, self.last_price, self._clock())
+        self.market_fills.append(fill)
+        return fill
 
     async def get_open_orders(self) -> list[Order]:
         """Resting orders."""

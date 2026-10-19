@@ -177,3 +177,48 @@ class InMemoryScannerStore:
         self, run_at: datetime, exchange: str, rows: Sequence[tuple[str, Decimal, dict[str, Any]]]
     ) -> None:
         self.saved = list(rows)
+
+
+class InMemorySessionStore:
+    def __init__(self) -> None:
+        self.sessions: dict[int, dict[str, Any]] = {}
+        self.orders: dict[str, Any] = {}
+        self.fills: list[Any] = []
+        self.cycles: list[Any] = []
+        self.equity: list[Any] = []
+
+    async def create_session(self, *, mode: str, exchange: str, symbol: str, params: dict[str, Any]) -> int:
+        sid = len(self.sessions) + 1
+        self.sessions[sid] = {
+            "mode": mode,
+            "exchange": exchange,
+            "symbol": symbol,
+            "params": params,
+            "status": "running",
+            "state": {},
+        }
+        return sid
+
+    async def save_state(self, session_id: int, state: dict[str, Any], status: str | None = None) -> None:
+        self.sessions[session_id]["state"] = state
+        if status is not None:
+            self.sessions[session_id]["status"] = status
+
+    async def get_running(self, mode: str, exchange: str, symbol: str) -> tuple[int, dict[str, Any]] | None:
+        for sid in sorted(self.sessions, reverse=True):
+            s = self.sessions[sid]
+            if (s["mode"], s["exchange"], s["symbol"], s["status"]) == (mode, exchange, symbol, "running"):
+                return sid, s["state"]
+        return None
+
+    async def upsert_order(self, session_id: int, order: Any) -> None:
+        self.orders[order.client_id] = (order.status, order.filled_qty)
+
+    async def add_fill(self, session_id: int, fill: Any) -> None:
+        self.fills.append(fill)
+
+    async def add_cycle(self, session_id: int, cycle: Any) -> None:
+        self.cycles.append(cycle)
+
+    async def add_equity_point(self, session_id: int, point: Any) -> None:
+        self.equity.append(point)

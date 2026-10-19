@@ -242,3 +242,5 @@ docs/reports/backtests/*
 !docs/reports/backtests/.gitkeep
 docs/reports/walk-forward/*
 !docs/reports/walk-forward/.gitkeep
+docs/reports/paper/*
+!docs/reports/paper/.gitkeep

@@ -86,13 +86,13 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [ ] Weekly Celery beat recalculation; results stored (task + DB done; beat verified in compose in 1.13)
 
 ### 1.11 Paper trader
-- [ ] `PaperOrderGateway` using live WS prices and the same fill rules
-- [ ] Paper sessions persisted; daily comparison vs backtest over the same period
-- [ ] Runs ≥ 14 days on selected pairs
+- [x] Paper sessions on live WS trades via `VirtualOrderGateway` (same fill rules), resume after restart, candle backfill of stream gaps
+- [x] Paper sessions persisted; comparison vs backtest over the same period (`pendulum paper compare`)
+- [ ] Runs ≥ 14 days on selected pairs (owner runs `make paper` after Stage 1 infra is up)
 
 ### 1.12 Telegram notifier
-- [ ] HTML-formatted messages: start, daily virtual summary, range-exit signal, weekly results
-- [ ] Rate-limited sender, retries, no secrets in messages
+- [x] HTML-formatted messages: start/resume, daily virtual summary, range-exit signal, stop, weekly results
+- [x] Rate-limited sender, retries, no secrets in messages or logs
 
 ### 1.13 Local infrastructure
 - [ ] `docker-compose.local.yml`: postgres, redis, migrations, celery worker, celery beat, collector,

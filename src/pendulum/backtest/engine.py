@@ -321,7 +321,7 @@ class _Simulation:
         r.final_equity = equity
         r.realized = trader.realized_profit
         r.fees_paid = self.exchange.fees_paid_quote
-        r.cycles = len(trader.cycles)
+        r.cycles = trader.cycle_count
         r.rebuilds = trader.rebuilds
         return r
 
