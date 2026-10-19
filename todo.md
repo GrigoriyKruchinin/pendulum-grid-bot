@@ -81,9 +81,9 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] Robustness checks: share of positive OOS windows, per-pair/per-window concentration
 
 ### 1.10 Pair scanner
-- [ ] Score pairs: volatility, range-boundness (e.g. ADX / efficiency ratio), 24h volume ≥ threshold, spread,
-      fee-to-step ratio
-- [ ] Weekly Celery beat recalculation; results stored
+- [x] Score pairs: volatility, range-boundness (daily efficiency ratio), drift, 24h volume ≥ threshold, spread,
+      fee-to-range ratio, tick granularity; risky (innovation/ST) tokens excluded
+- [ ] Weekly Celery beat recalculation; results stored (task + DB done; beat verified in compose in 1.13)
 
 ### 1.11 Paper trader
 - [ ] `PaperOrderGateway` using live WS prices and the same fill rules

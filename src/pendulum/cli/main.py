@@ -22,6 +22,8 @@ from pendulum.domain.models import Symbol, Timeframe
 app = typer.Typer(help="Pendulum grid bot.", no_args_is_help=True)
 data_app = typer.Typer(help="Market data.", no_args_is_help=True)
 app.add_typer(data_app, name="data")
+scan_app = typer.Typer(help="Pair scanner.", no_args_is_help=True)
+app.add_typer(scan_app, name="scan")
 backtest_app = typer.Typer(help="Backtests and walk-forward optimisation.", no_args_is_help=True)
 app.add_typer(backtest_app, name="backtest")
 
@@ -185,6 +187,26 @@ def backtest_walk_forward(
                 for check in evaluate_backtest_criteria(results):
                     mark = "PASS" if check.passed else "FAIL"
                     typer.echo(f"  [{mark}] {check.name}: {check.value} (need {check.threshold})")
+
+    run(_main())
+
+
+@scan_app.command("run")
+def scan_run() -> None:
+    """Rank liquid spot pairs by grid suitability and store the top N."""
+
+    async def _main() -> None:
+        async with build_container() as c:
+            results = await c.pair_scanner.scan()
+            header = (
+                f"{'#':>3} {'pair':<12} {'score':>7} {'1h range':>9} {'ER':>6} {'drift':>8} {'vol $M':>8}"
+            )
+            typer.echo(header)
+            for i, m in enumerate(results[:20], 1):
+                typer.echo(
+                    f"{i:>3} {m.symbol:<12} {m.score:>7.2f} {m.hourly_range:>9.2%} "
+                    f"{m.efficiency_ratio:>6.3f} {m.drift:>8.1%} {m.volume_24h_usd / 1e6:>8.1f}"
+                )
 
     run(_main())
 

@@ -37,3 +37,16 @@ def sync_candles() -> None:
     """Beat: every 5 minutes."""
     setup_logging()
     asyncio.run(sync_candles_async())
+
+
+async def scan_pairs_async() -> None:
+    """Weekly pair scan."""
+    async with build_container() as c:
+        await c.pair_scanner.scan()
+
+
+@celery_app.task(name="pendulum.scan_pairs")  # type: ignore[untyped-decorator]
+def scan_pairs() -> None:
+    """Beat: Mondays 01:00 UTC."""
+    setup_logging()
+    asyncio.run(scan_pairs_async())

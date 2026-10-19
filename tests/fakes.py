@@ -3,6 +3,7 @@
 from collections.abc import AsyncIterator, Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
+from typing import Any
 
 from pendulum.domain.models import (
     Candle,
@@ -166,3 +167,13 @@ class InMemoryRunStore:
     async def save_run(self, **kwargs: object) -> int:
         self.runs.append(kwargs)
         return len(self.runs)
+
+
+class InMemoryScannerStore:
+    def __init__(self) -> None:
+        self.saved: list[tuple[str, Decimal, dict[str, Any]]] = []
+
+    async def save_scores(
+        self, run_at: datetime, exchange: str, rows: Sequence[tuple[str, Decimal, dict[str, Any]]]
+    ) -> None:
+        self.saved = list(rows)
