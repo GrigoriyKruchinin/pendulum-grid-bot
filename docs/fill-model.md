@@ -60,4 +60,4 @@ matter for them. This is the worst-case ordering for a grid.
 - Candles with missing bars are refused when more than 1% of bars are missing; smaller gaps are bridged.
 
 Paper trading over at least 14 days, compared with a backtest of the same period, is the check that these
-simplifications do not distort the results (Go/No-Go criterion).
+simplifications do not distort the results (one of the viability criteria).

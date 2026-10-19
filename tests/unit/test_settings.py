@@ -5,7 +5,13 @@ import pytest
 from pydantic import ValidationError
 
 from pendulum.config.pairs import PairConfig, load_pairs
-from pendulum.config.settings import BybitSettings, DatabaseSettings, GridType, RiskSettings, TelegramSettings
+from pendulum.config.settings import (
+    BybitSettings,
+    CapitalSettings,
+    DatabaseSettings,
+    GridType,
+    TelegramSettings,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -37,8 +43,8 @@ def test_secret_not_in_repr(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "hunter2" in s.async_url
 
 
-def test_risk_pair_cap() -> None:
-    assert RiskSettings().max_pair_capital_usd == Decimal("150")
+def test_capital_per_pair() -> None:
+    assert CapitalSettings().pair_usd == Decimal("150")
 
 
 def test_telegram_enabled(monkeypatch: pytest.MonkeyPatch) -> None:

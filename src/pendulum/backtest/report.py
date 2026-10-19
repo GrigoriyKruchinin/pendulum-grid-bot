@@ -130,7 +130,7 @@ def walk_forward_report(
 
 
 def criteria_table(checks: Sequence[CriterionCheck]) -> str:
-    """Markdown table of Go/No-Go checks."""
+    """Markdown table of viability checks."""
     lines = ["| Criterion | Result | Value | Threshold |", "|---|:-:|---:|---|"]
     lines += [f"| {c.name} | {'✅' if c.passed else '❌'} | {c.value} | {c.threshold} |" for c in checks]
     return "\n".join(lines) + "\n"

@@ -1,4 +1,8 @@
-"""Go/No-Go criteria agreed with the owner (2026-10-19)."""
+"""Viability criteria: when is a grid configuration worth running on a market.
+
+Defaults are deliberately demanding: a strategy must be robust out-of-sample, beat buy & hold, keep the
+drawdown bounded and not depend on a few lucky windows or pairs. All thresholds are configurable.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +15,7 @@ from pendulum.domain.money import ZERO
 
 
 @dataclass(frozen=True, slots=True)
-class GoNoGoCriteria:
+class ViabilityCriteria:
     """Thresholds (fractions)."""
 
     min_positive_window_share: Decimal = Decimal("0.60")
@@ -32,11 +36,11 @@ class CriterionCheck:
     threshold: str
 
 
-def evaluate_backtest_criteria(
-    results: Sequence[WalkForwardResult], c: GoNoGoCriteria | None = None
+def evaluate_viability(
+    results: Sequence[WalkForwardResult], c: ViabilityCriteria | None = None
 ) -> list[CriterionCheck]:
     """Backtest-side criteria across all pairs (paper divergence is checked separately)."""
-    c = c or GoNoGoCriteria()
+    c = c or ViabilityCriteria()
     windows = [w for r in results for w in r.windows]
     if not windows:
         return [CriterionCheck("data", False, "no windows", ">= 1 window")]

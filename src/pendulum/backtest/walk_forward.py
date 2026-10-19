@@ -2,7 +2,7 @@
 
 For each window: evaluate every parameter set on the train span, pick the best one that respects the
 drawdown limit, then simulate only that set on the following unseen test span. Only test (out-of-sample)
-results feed the Go/No-Go decision.
+results feed the viability check.
 """
 
 from __future__ import annotations

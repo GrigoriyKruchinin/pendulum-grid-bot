@@ -114,7 +114,7 @@ class BacktestRunRow(Base):
 
 
 class TradingSessionRow(Base):
-    """A paper (Stage 1) or live (Stage 2) grid session."""
+    """A paper-trading grid session (virtual orders on live market data)."""
 
     __tablename__ = "trading_sessions"
 

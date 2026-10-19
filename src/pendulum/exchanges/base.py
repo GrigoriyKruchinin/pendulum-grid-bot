@@ -55,7 +55,7 @@ class IWebSocketTicker(Protocol):
 
 
 class IAccountData(Protocol):
-    """Authenticated read-only account data (optional in Stage 1)."""
+    """Authenticated read-only account data (optional: only used for the real fee tier)."""
 
     async def fetch_fee_rate(self, instrument: Instrument) -> FeeRate:
         """Actual maker/taker fee for the account tier."""

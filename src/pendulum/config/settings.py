@@ -1,8 +1,8 @@
 """Modular application settings.
 
 Every group reads only its own env prefix, so each container can be given just the variables it needs.
-Trading credentials live in per-exchange groups (e.g. ``BybitSettings``) that only exchange-facing
-processes instantiate.
+Exchange credentials (optional, read-only) live in per-exchange groups (e.g. ``BybitSettings``) that only
+exchange-facing processes instantiate.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ class ExchangeCredentialsSettings(BaseSettings):
     @model_validator(mode="before")
     @classmethod
     def _empty_strings_to_none(cls, data: object) -> object:
-        # `.env` keeps `EXCHANGE_BYBIT_API_KEY=` empty when no key is used (Stage 1 public data only).
+        # `.env` keeps `EXCHANGE_BYBIT_API_KEY=` empty when no key is used (public market data only).
         if isinstance(data, dict):
             return {k: (None if v == "" else v) for k, v in data.items()}
         return data
@@ -127,20 +127,18 @@ class ScannerSettings(BaseSettings):
     top_n: int = Field(default=15, ge=1)
 
 
-class RiskSettings(BaseSettings):
-    """Capital and loss limits (enforced live from Stage 2, used for sizing in Stage 1)."""
+class CapitalSettings(BaseSettings):
+    """Simulated capital: total budget and the per-pair share used by backtests and paper sessions."""
 
-    model_config = _config("RISK_")
+    model_config = _config("CAPITAL_")
 
-    max_total_capital_usd: Decimal = Field(default=Decimal("500"), gt=0)
-    max_pair_capital_pct: Decimal = Field(default=Decimal("30"), gt=0, le=100)
-    daily_loss_limit_pct: Decimal = Field(default=Decimal("5"), gt=0, le=100)
-    max_open_orders: int = Field(default=100, ge=1)
+    total_usd: Decimal = Field(default=Decimal("500"), gt=0)
+    pair_pct: Decimal = Field(default=Decimal("30"), gt=0, le=100)
 
     @property
-    def max_pair_capital_usd(self) -> Decimal:
-        """Absolute per-pair capital cap."""
-        return self.max_total_capital_usd * self.max_pair_capital_pct / Decimal(100)
+    def pair_usd(self) -> Decimal:
+        """Capital allocated to one pair."""
+        return self.total_usd * self.pair_pct / Decimal(100)
 
 
 class BacktestSettings(BaseSettings):
@@ -171,15 +169,6 @@ class TelegramSettings(BaseSettings):
     def enabled(self) -> bool:
         """True when both token and chat id are configured."""
         return self.bot_token is not None and self.chat_id is not None
-
-
-class AdminSettings(BaseSettings):
-    """Dashboard credentials (Stage 3)."""
-
-    model_config = _config("ADMIN_")
-
-    username: str = "admin"
-    password_hash: SecretStr | None = None
 
 
 @lru_cache

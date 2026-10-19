@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pendulum.backtest.engine import GridParams
 from pendulum.config.pairs import PairConfig
-from pendulum.config.settings import BacktestSettings, GridSettings, GridType, RiskSettings
+from pendulum.config.settings import BacktestSettings, CapitalSettings, GridSettings, GridType
 from pendulum.domain.models import FeeModel, OrderStatus, StreamGap, Symbol, Ticker, Timeframe, TradeTick
 from pendulum.notifications.telegram import NullNotifier
 from pendulum.paper.runner import PaperRunner, params_for
@@ -113,7 +113,7 @@ async def test_runner_opens_sessions_and_backfills_gaps() -> None:
             )
         ],
         grid=GridSettings(_env_file=None, default_exit_policy="wait"),
-        risk=RiskSettings(_env_file=None),
+        capital=CapitalSettings(_env_file=None),
         backtest=BacktestSettings(_env_file=None),
         now=lambda: T0,
     )
@@ -129,7 +129,7 @@ async def test_runner_opens_sessions_and_backfills_gaps() -> None:
         notifier=notifier,
         pairs=runner.pairs,
         grid=runner.grid,
-        risk=runner.risk,
+        capital=runner.capital,
         backtest=runner.backtest,
         now=lambda: T0 + timedelta(minutes=10),
     )
@@ -144,7 +144,7 @@ def _runner(rest: FakeRest, store: InMemorySessionStore, notifier: NullNotifier,
         notifier=notifier,
         pairs=kw.pop("pairs", [PairConfig(symbol="SOL/USDT", levels=5, range_width_pct=Decimal(20))]),  # type: ignore[arg-type]
         grid=GridSettings(_env_file=None, default_exit_policy="wait"),
-        risk=RiskSettings(_env_file=None),
+        capital=CapitalSettings(_env_file=None),
         backtest=BacktestSettings(_env_file=None),
         now=lambda: T0 + timedelta(minutes=10),
         **kw,  # type: ignore[arg-type]

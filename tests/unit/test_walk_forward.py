@@ -1,7 +1,7 @@
 from datetime import timedelta
 from decimal import Decimal
 
-from pendulum.backtest.criteria import evaluate_backtest_criteria
+from pendulum.backtest.criteria import evaluate_viability
 from pendulum.backtest.engine import BacktestResult, GridParams, SimulationConfig, run_backtest
 from pendulum.backtest.walk_forward import (
     WalkForwardConfig,
@@ -55,7 +55,7 @@ async def test_sideways_market_passes_and_trend_fails() -> None:
     assert down.positive_share == 0
     assert any(not w.traded for w in down.windows)  # nothing qualified in-sample: stays in cash
 
-    checks = {c.name: c for c in evaluate_backtest_criteria([down])}
+    checks = {c.name: c for c in evaluate_viability([down])}
     assert not checks["positive OOS windows"].passed
 
 

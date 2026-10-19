@@ -10,7 +10,7 @@ from typing import Annotated, Any
 
 import typer
 
-from pendulum.backtest.criteria import GoNoGoCriteria, evaluate_backtest_criteria
+from pendulum.backtest.criteria import ViabilityCriteria, evaluate_viability
 from pendulum.backtest.engine import GridParams, SimulationConfig
 from pendulum.backtest.report import pct
 from pendulum.backtest.service import DataQualityError
@@ -22,7 +22,7 @@ from pendulum.backtest.walk_forward import (
     regime_param_grid,
 )
 from pendulum.config.pairs import load_pairs
-from pendulum.config.settings import BacktestSettings, GridSettings, GridType, RiskSettings
+from pendulum.config.settings import BacktestSettings, CapitalSettings, GridSettings, GridType
 from pendulum.container import build_container, setup_logging
 from pendulum.domain.models import Symbol, Timeframe
 from pendulum.notifications.telegram import make_notifier
@@ -121,7 +121,9 @@ def backtest_run(
     grid_type: Annotated[GridType, typer.Option("--grid-type")] = GridType.GEOMETRIC,
     exit_policy: Annotated[str, typer.Option("--exit", help="Range-exit policy")] = "stop_loss+trailing_up",
     regime: Annotated[str, typer.Option(help="Regime filter: none, er72, er168")] = "none",
-    capital: Annotated[str | None, typer.Option(help="Quote capital (default: per-pair risk cap)")] = None,
+    capital: Annotated[
+        str | None, typer.Option(help="Quote capital (default: CAPITAL_TOTAL_USD x CAPITAL_PAIR_PCT)")
+    ] = None,
 ) -> None:
     """Backtest one parameter set on stored candles and write a report."""
 
@@ -132,7 +134,7 @@ def backtest_run(
             instrument = await c.loader.resolve(symbol)
             bt = BacktestSettings()
             config = SimulationConfig(
-                capital=Decimal(capital) if capital else RiskSettings().max_pair_capital_usd,
+                capital=Decimal(capital) if capital else CapitalSettings().pair_usd,
                 fees=await svc.fee_model(instrument),
                 slippage_bps=bt.slippage_bps,
                 timeframe=tf,
@@ -169,9 +171,11 @@ def backtest_walk_forward(
         ),
     ] = "default",
     workers: Annotated[int | None, typer.Option(help="Parallel processes (default: CPUs - 1)")] = None,
-    capital: Annotated[str | None, typer.Option(help="Quote capital (default: per-pair risk cap)")] = None,
+    capital: Annotated[
+        str | None, typer.Option(help="Quote capital (default: CAPITAL_TOTAL_USD x CAPITAL_PAIR_PCT)")
+    ] = None,
 ) -> None:
-    """Walk-forward optimisation per pair, then the Go/No-Go backtest criteria across all pairs."""
+    """Walk-forward optimisation per pair, then the viability check across all pairs."""
 
     async def _main() -> None:
         async with build_container() as c:
@@ -192,7 +196,7 @@ def backtest_walk_forward(
             for symbol in parse_pairs(pairs):
                 instrument = await c.loader.resolve(symbol)
                 config = SimulationConfig(
-                    capital=Decimal(capital) if capital else RiskSettings().max_pair_capital_usd,
+                    capital=Decimal(capital) if capital else CapitalSettings().pair_usd,
                     fees=await svc.fee_model(instrument),
                     slippage_bps=bt.slippage_bps,
                     timeframe=tf,
@@ -211,8 +215,8 @@ def backtest_walk_forward(
                     f"b&h={pct(r.buy_hold_compound_return)} maxDD={pct(r.max_oos_drawdown)} report={path}"
                 )
             if results:
-                typer.echo("\nGo/No-Go (backtest part):")
-                for check in evaluate_backtest_criteria(results):
+                typer.echo("\nViability check (out-of-sample, all pairs):")
+                for check in evaluate_viability(results):
                     mark = "PASS" if check.passed else "FAIL"
                     typer.echo(f"  [{mark}] {check.name}: {check.value} (need {check.threshold})")
 
@@ -257,7 +261,7 @@ def paper_run(
                 notifier=notifier,
                 pairs=load_pairs(grid.pairs_file).enabled(),
                 grid=grid,
-                risk=RiskSettings(),
+                capital=CapitalSettings(),
                 backtest=BacktestSettings(),
                 rearm_stopped=rearm,
             )
@@ -287,7 +291,7 @@ def paper_compare() -> None:
     async def _main() -> None:
         async with build_container() as c:
             rows, path = await compare_all(c)
-            for line in comparison_lines(rows, GoNoGoCriteria().max_paper_divergence):
+            for line in comparison_lines(rows, ViabilityCriteria().max_paper_divergence):
                 typer.echo(line)
             typer.echo(f"report: {path}")
 

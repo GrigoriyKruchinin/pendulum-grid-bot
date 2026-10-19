@@ -1,4 +1,4 @@
-# Pendulum local stack (Stage 1: read-only market data, backtests, paper trading).
+# Pendulum local stack: market data collection, backtests and paper trading (read-only exchange access).
 # Values are interpolated from `.env`; every service receives only the variables it needs.
 name: pendulum-local
 
@@ -41,8 +41,8 @@ x-env-strategy: &env-strategy
   SCANNER_MAX_SPREAD_BPS: ${SCANNER_MAX_SPREAD_BPS:-10}
   SCANNER_LOOKBACK_DAYS: ${SCANNER_LOOKBACK_DAYS:-30}
   SCANNER_TOP_N: ${SCANNER_TOP_N:-15}
-  RISK_MAX_TOTAL_CAPITAL_USD: ${RISK_MAX_TOTAL_CAPITAL_USD:-500}
-  RISK_MAX_PAIR_CAPITAL_PCT: ${RISK_MAX_PAIR_CAPITAL_PCT:-30}
+  CAPITAL_TOTAL_USD: ${CAPITAL_TOTAL_USD:-500}
+  CAPITAL_PAIR_PCT: ${CAPITAL_PAIR_PCT:-30}
   BACKTEST_SLIPPAGE_BPS: ${BACKTEST_SLIPPAGE_BPS:-5}
   BACKTEST_DEFAULT_TIMEFRAME: ${BACKTEST_DEFAULT_TIMEFRAME:-1m}
 

@@ -11,7 +11,7 @@ from html import escape
 
 from pendulum.backtest.engine import GridParams
 from pendulum.config.pairs import PairConfig
-from pendulum.config.settings import BacktestSettings, GridSettings, RiskSettings
+from pendulum.config.settings import BacktestSettings, CapitalSettings, GridSettings
 from pendulum.domain.models import Candle, FeeModel, Instrument, StreamGap, Symbol, Timeframe, TradeTick
 from pendulum.domain.ports import ITradingSessionStore
 from pendulum.exchanges.base import BaseExchangeAdapter, ExchangeError
@@ -46,7 +46,7 @@ class PaperRunner:
         notifier: INotifier,
         pairs: Sequence[PairConfig],
         grid: GridSettings,
-        risk: RiskSettings,
+        capital: CapitalSettings,
         backtest: BacktestSettings,
         rearm_stopped: bool = False,
         heartbeat_every: float = 60.0,
@@ -57,7 +57,7 @@ class PaperRunner:
         self.notifier = notifier
         self.pairs = list(pairs)
         self.grid = grid
-        self.risk = risk
+        self.capital = capital
         self.backtest = backtest
         self._now = now
         self.rearm_stopped = rearm_stopped
@@ -70,12 +70,12 @@ class PaperRunner:
         """Resume running sessions or open new ones at the current price."""
         instruments = await self.adapter.rest.fetch_instruments()
         prices = {t.symbol: t.last for t in await self.adapter.rest.fetch_tickers()}
-        total = sum((p.capital_usd or self.risk.max_pair_capital_usd for p in self.pairs), Decimal(0))
-        if total > self.risk.max_total_capital_usd:
+        total = sum((p.capital_usd or self.capital.pair_usd for p in self.pairs), Decimal(0))
+        if total > self.capital.total_usd:
             log.warning(
-                "paper_capital_exceeds_live_limit",
+                "paper_capital_exceeds_total",
                 total=str(total),
-                limit=str(self.risk.max_total_capital_usd),
+                limit=str(self.capital.total_usd),
             )
         active: list[Instrument] = []
         for pair in self.pairs:
@@ -115,7 +115,7 @@ class PaperRunner:
             exchange_id=self.adapter.exchange_id,
             instrument=inst,
             params=params_for(pair, self.grid),
-            capital=pair.capital_usd or self.risk.max_pair_capital_usd,
+            capital=pair.capital_usd or self.capital.pair_usd,
             fees=FeeModel(rate.maker, rate.taker),
             slippage_bps=self.backtest.slippage_bps,
             min_step_fee_multiplier=self.grid.min_step_fee_multiplier,

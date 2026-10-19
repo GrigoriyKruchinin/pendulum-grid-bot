@@ -8,7 +8,7 @@ from pathlib import Path
 
 import typer
 
-from pendulum.backtest.criteria import GoNoGoCriteria
+from pendulum.backtest.criteria import ViabilityCriteria
 from pendulum.backtest.report import DISCLAIMER
 from pendulum.container import Container
 from pendulum.notifications import templates
@@ -43,7 +43,7 @@ async def compare_all(c: Container) -> tuple[list[PaperComparison], Path]:
         for info in await c.session_reader.list_sessions(MODE, ["running", "stopped"])
         if "trader" in info.state
     ]
-    crit = GoNoGoCriteria()
+    crit = ViabilityCriteria()
     lines = [
         "# Paper trading vs backtest",
         "",
