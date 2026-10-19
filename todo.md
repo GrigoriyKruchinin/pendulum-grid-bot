@@ -55,10 +55,10 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] Contract test suite every adapter must pass (so a 2nd exchange can be added without core changes)
 
 ### 1.6 Market data collector
-- [ ] Historical candle loader (1m/5m) with checkpoints, resume, idempotent upserts
-- [ ] Gap detection + backfill; data-quality report
-- [ ] Celery task for periodic incremental sync
-- [ ] CLI: `pendulum data load --pairs ... --tf 1m --since ...`
+- [x] Historical candle loader (1m/5m) with checkpoints, resume, idempotent upserts
+- [x] Gap detection + backfill; data-quality report
+- [ ] Celery task for periodic incremental sync (task + beat written; verified in compose in 1.13)
+- [x] CLI: `pendulum data load --pairs ... --tf 1m --since ...`
 
 ### 1.7 Grid engine
 - [ ] `IGridStrategy` + `ArithmeticGrid`, `GeometricGrid` (default)
