@@ -1,0 +1,1 @@
+"""Exchange-agnostic domain layer."""

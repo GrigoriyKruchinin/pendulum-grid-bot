@@ -35,9 +35,9 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] `.env.example` kept in sync; tests for settings validation
 
 ### 1.3 Domain & money
-- [ ] Domain models: `Symbol`, `MarketFilters` (tickSize, stepSize, minQty, minNotional), `Candle`, `Order`,
+- [x] Domain models: `Symbol`, `MarketFilters` (tickSize, stepSize, minQty, minNotional), `Candle`, `Order`,
       `Fill`, `GridLevel`, `Cycle`, `EquityPoint` — all `Decimal`
-- [ ] Money/rounding helpers (buy down, sell up, qty down) + property tests
+- [x] Money/rounding helpers (buy down, sell up, qty down) + property tests
 
 ### 1.4 Storage
 - [ ] SQLAlchemy async models: candles, symbols/filters, grid states, orders, fills, cycles, equity curve,
