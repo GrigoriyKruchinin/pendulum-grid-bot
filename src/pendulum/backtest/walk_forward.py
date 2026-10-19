@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import bisect
 import itertools
+import multiprocessing
 import os
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
@@ -91,6 +92,11 @@ def regime_param_grid() -> list[GridParams]:
             ("none", "er72", "er168"),
         )
     ]
+
+
+def baseline_param_grid() -> list[GridParams]:
+    """The regime space without filters (48 sets): the ablation baseline for iteration 1."""
+    return [p for p in regime_param_grid() if p.regime == "none"]
 
 
 def quick_param_grid() -> list[GridParams]:
@@ -292,8 +298,12 @@ async def _evaluate_grid(
             out.append(r)
         return out
     loop = asyncio.get_running_loop()
+    # forkserver: workers must not inherit (and gradually copy) the parent's full multi-year candle heap.
     with ProcessPoolExecutor(
-        max_workers=workers, initializer=_init_worker, initargs=(candles, warmup, instrument, config)
+        max_workers=workers,
+        mp_context=multiprocessing.get_context("forkserver"),
+        initializer=_init_worker,
+        initargs=(candles, warmup, instrument, config),
     ) as pool:
         return list(await asyncio.gather(*(loop.run_in_executor(pool, _evaluate, p) for p in grid)))
 

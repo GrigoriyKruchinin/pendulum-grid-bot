@@ -16,6 +16,7 @@ from pendulum.backtest.report import pct
 from pendulum.backtest.service import DataQualityError
 from pendulum.backtest.walk_forward import (
     WalkForwardConfig,
+    baseline_param_grid,
     default_param_grid,
     quick_param_grid,
     regime_param_grid,
@@ -162,7 +163,10 @@ def backtest_walk_forward(
     test_days: Annotated[int, typer.Option(help="Test window length (also the step)")] = 14,
     grid_name: Annotated[
         str,
-        typer.Option("--grid", help="Parameter space: default (96), regime (144, with filters), quick (12)"),
+        typer.Option(
+            "--grid",
+            help="Parameter space: default (96), regime (144), baseline (48, regime w/o filters), quick (12)",
+        ),
     ] = "default",
     workers: Annotated[int | None, typer.Option(help="Parallel processes (default: CPUs - 1)")] = None,
     capital: Annotated[str | None, typer.Option(help="Quote capital (default: per-pair risk cap)")] = None,
@@ -174,7 +178,12 @@ def backtest_walk_forward(
             svc = c.backtest_service
             bt = BacktestSettings()
             wf = WalkForwardConfig(train_days=train_days, test_days=test_days)
-            grids = {"default": default_param_grid, "regime": regime_param_grid, "quick": quick_param_grid}
+            grids = {
+                "default": default_param_grid,
+                "regime": regime_param_grid,
+                "baseline": baseline_param_grid,
+                "quick": quick_param_grid,
+            }
             if grid_name not in grids:
                 raise typer.BadParameter(f"unknown grid {grid_name!r}")
             grid = grids[grid_name]()
