@@ -40,10 +40,10 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] Money/rounding helpers (buy down, sell up, qty down) + property tests
 
 ### 1.4 Storage
-- [ ] SQLAlchemy async models: candles, symbols/filters, grid states, orders, fills, cycles, equity curve,
+- [x] SQLAlchemy async models: candles, symbols/filters, grid states, orders, fills, cycles, equity curve,
       backtest runs (params + git SHA + metrics), paper sessions, scanner scores
-- [ ] Alembic setup + initial migration; migrations run in a dedicated one-shot container
-- [ ] Repositories (narrow interfaces) + integration tests
+- [ ] Alembic setup + initial migration; migrations run in a dedicated one-shot container (migration done + `alembic check` clean; container in 1.13)
+- [x] Repositories (narrow interfaces) + integration tests
 
 ### 1.5 Exchange layer (multi-exchange ready)
 - [ ] Interfaces: `IRestMarketData`, `IWebSocketTicker`, `IOrderGateway`; `BaseExchangeAdapter`
