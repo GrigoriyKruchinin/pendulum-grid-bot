@@ -29,10 +29,10 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [ ] Multi-stage `Dockerfile` (non-root user, uv cache) (written; build verified in 1.13)
 
 ### 1.2 Configuration
-- [ ] Modular Pydantic Settings: `AppSettings`, `DatabaseSettings`, `RedisSettings`, `ExchangeSettings`,
+- [x] Modular Pydantic Settings: `AppSettings`, `DatabaseSettings`, `RedisSettings`, `ExchangeSettings`,
       `GridSettings`, `RiskSettings`, `TelegramSettings`, `BacktestSettings`, `AdminSettings`
-- [ ] Per-pair overrides (grid type, levels, range) via config file (YAML/TOML) validated by pydantic
-- [ ] `.env.example` kept in sync; tests for settings validation
+- [x] Per-pair overrides (grid type, levels, range) via config file (YAML/TOML) validated by pydantic
+- [x] `.env.example` kept in sync; tests for settings validation
 
 ### 1.3 Domain & money
 - [ ] Domain models: `Symbol`, `MarketFilters` (tickSize, stepSize, minQty, minNotional), `Candle`, `Order`,

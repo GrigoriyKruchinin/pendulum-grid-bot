@@ -1,0 +1,17 @@
+# Per-pair overrides. Omitted fields fall back to GRID_* defaults from the environment.
+# Candidates are refined by the pair scanner; only `enabled = true` pairs are paper-traded.
+
+[[pairs]]
+symbol = "BTC/USDT"
+
+[[pairs]]
+symbol = "ETH/USDT"
+
+[[pairs]]
+symbol = "SOL/USDT"
+
+[[pairs]]
+symbol = "XRP/USDT"
+
+[[pairs]]
+symbol = "DOGE/USDT"
