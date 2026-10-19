@@ -25,6 +25,7 @@ async def test_bybit_adapter_contract_offline() -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.live
 async def test_bybit_adapter_contract_live() -> None:
     adapter = BybitAdapter(bybit_settings())
     try:
@@ -34,6 +35,7 @@ async def test_bybit_adapter_contract_live() -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.live
 async def test_bybit_ws_live_trades() -> None:
     adapter = BybitAdapter(bybit_settings())
     try:

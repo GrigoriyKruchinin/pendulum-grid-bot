@@ -1,8 +1,8 @@
-# Risk audit: `main...stage-1-mvp` (2026-10-19)
+# Security & correctness audit (2026-10-19)
 
-Auditor: `security-trading-risk-critic` agent. Verdict: **FIX BEFORE RELEASE**. No finding loses money
-in read-only Stage 1, but H1/M1 could let the Go/No-Go drawdown check pass incorrectly and M2/M3 could
-distort the paper-vs-backtest evidence.
+Auditor: critic agent. Initial verdict: **FIX BEFORE RELEASE** (all findings below were fixed). The
+exchange access is read-only, so no finding could lose money, but H1/M1 could let the drawdown criterion of
+the viability check pass incorrectly and M2/M3 could distort the paper-vs-backtest comparison.
 
 Clean: secrets handling (SecretStr, redaction, no tracked secrets), Decimal discipline in money paths,
 strict-cross fills with post-placement eligibility, stop exit at candle low, fair buy & hold, train-only

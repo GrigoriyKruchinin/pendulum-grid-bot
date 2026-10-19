@@ -80,5 +80,8 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-markers = ["integration: requires running Postgres/Redis or network access"]
+markers = [
+    "integration: requires a running Postgres (POSTGRES_* env)",
+    "live: calls the real exchange API (needs network access to Bybit)",
+]
 addopts = "-m 'not integration' --strict-markers"
