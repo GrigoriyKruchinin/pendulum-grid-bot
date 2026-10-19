@@ -287,12 +287,13 @@ class _Simulation:
                 await trader.rebuild(plan, candle.close, now)
                 self.was_in_range = True
 
-    def track_equity(self, price: Decimal, now: datetime, sample: bool) -> Decimal:
-        equity = self.exchange.equity(price)
-        if equity > self.peak:
-            self.peak = equity
-        elif self.peak > 0:
-            self.result.max_drawdown = max(self.result.max_drawdown, (self.peak - equity) / self.peak)
+    def track_equity(self, candle: Candle, now: datetime, sample: bool) -> Decimal:
+        equity = self.exchange.equity(candle.close)
+        self.peak = max(self.peak, equity, self.exchange.equity(candle.high))
+        if self.peak > 0:
+            # The grid is long inventory, so the bar low is the intra-bar equity trough.
+            trough = min(equity, self.exchange.equity(candle.low))
+            self.result.max_drawdown = max(self.result.max_drawdown, (self.peak - trough) / self.peak)
         if sample:
             self.result.equity_curve.append((now, equity))
         return equity
@@ -314,7 +315,7 @@ class _Simulation:
             if trader.active:
                 await self.handle_exit(trader, candle, now)
             sample = now >= next_sample
-            equity = self.track_equity(candle.close, now, sample)
+            equity = self.track_equity(candle, now, sample)
             if sample:
                 next_sample = now + equity_sample
         r = self.result

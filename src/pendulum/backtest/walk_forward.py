@@ -166,9 +166,35 @@ class WalkForwardResult:
         return self._annualize(self.buy_hold_compound_return)
 
     @property
-    def max_oos_drawdown(self) -> Decimal:
-        """Worst intra-window drawdown out-of-sample."""
+    def max_window_drawdown(self) -> Decimal:
+        """Worst drawdown inside a single test window."""
         return max((w.test.max_drawdown for w in self.windows if w.test), default=ZERO)
+
+    @property
+    def chained_drawdown(self) -> Decimal:
+        """Max drawdown of the OOS equity curve chained across consecutive test windows.
+
+        Each window's curve is scaled by the growth accumulated in earlier windows, so losses that build up
+        across windows are measured; untraded windows are flat.
+        """
+        growth = ONE
+        peak = ONE
+        worst = ZERO
+        for w in self.windows:
+            if w.test is not None:
+                for _, equity in w.test.equity_curve:
+                    value = growth * equity / w.test.initial_capital
+                    peak = max(peak, value)
+                    worst = max(worst, (peak - value) / peak)
+            growth *= ONE + w.oos_return
+            peak = max(peak, growth)
+            worst = max(worst, (peak - growth) / peak)
+        return worst
+
+    @property
+    def max_oos_drawdown(self) -> Decimal:
+        """Worse of the chained OOS drawdown and the worst intra-window drawdown."""
+        return max(self.chained_drawdown, self.max_window_drawdown)
 
     @property
     def mean_train_return(self) -> Decimal:

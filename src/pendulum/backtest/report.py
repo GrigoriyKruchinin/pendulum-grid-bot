@@ -109,7 +109,8 @@ def walk_forward_report(
             f"(annualized {pct(wf.oos_annualized)})",
             f"- Buy & hold over the same test windows: {pct(wf.buy_hold_compound_return)} "
             f"(annualized {pct(wf.buy_hold_annualized)})",
-            f"- Max OOS drawdown (within a window): {pct(wf.max_oos_drawdown)}",
+            f"- Max OOS drawdown: {pct(wf.max_oos_drawdown)} (chained across windows "
+            f"{pct(wf.chained_drawdown)}, worst single window {pct(wf.max_window_drawdown)})",
             f"- Mean in-sample return of selected sets: {pct(wf.mean_train_return)} vs mean OOS "
             f"{pct(wf.mean_test_return)} (gap = overfitting signal)",
             f"- Top-2 windows share of positive OOS return: {pct(wf.top2_profit_concentration)}",

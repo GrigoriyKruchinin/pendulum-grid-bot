@@ -2,9 +2,12 @@ from datetime import timedelta
 from decimal import Decimal
 
 from pendulum.backtest.criteria import evaluate_backtest_criteria
-from pendulum.backtest.engine import GridParams, SimulationConfig, run_backtest
+from pendulum.backtest.engine import BacktestResult, GridParams, SimulationConfig, run_backtest
 from pendulum.backtest.walk_forward import (
     WalkForwardConfig,
+    WalkForwardResult,
+    Window,
+    WindowResult,
     default_param_grid,
     make_windows,
     quick_param_grid,
@@ -72,3 +75,37 @@ async def test_select_best_respects_drawdown() -> None:
     assert best is not None
     assert best.net_return == max(r.net_return for r in results if r.max_drawdown <= Decimal("0.2"))
     assert select_best(results, WalkForwardConfig(max_train_drawdown=Decimal(0))) is None
+
+
+def _window_result(i: int, ret: Decimal) -> WindowResult:
+    cap = Decimal(1000)
+    end_eq = cap * (1 + ret)
+    r = BacktestResult(
+        params=GRID[0],
+        start=T0,
+        end=T0 + timedelta(days=1),
+        initial_capital=cap,
+        final_equity=end_eq,
+        realized=Decimal(0),
+        fees_paid=Decimal(0),
+        cycles=0,
+        max_drawdown=-ret,
+        bars=1,
+        bars_in_range=1,
+        range_exits=0,
+        rebuilds=0,
+        stopped=False,
+        buy_hold_return=Decimal(0),
+        equity_curve=[(T0, cap), (T0 + timedelta(days=1), end_eq)],
+    )
+    w = Window(T0 + timedelta(days=i), T0 + timedelta(days=i + 1), T0 + timedelta(days=i + 2))
+    return WindowResult(w, r.params, r, r, 1, 1)
+
+
+def test_chained_drawdown_captures_cross_window_losses() -> None:
+    wf = WalkForwardResult(
+        "SOL/USDT", [_window_result(i, Decimal("-0.06")) for i in range(5)], [Decimal(0)] * 5
+    )
+    assert wf.max_window_drawdown == Decimal("0.06")
+    assert wf.chained_drawdown > Decimal("0.26")
+    assert wf.max_oos_drawdown == wf.chained_drawdown

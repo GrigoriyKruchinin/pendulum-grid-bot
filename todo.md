@@ -107,7 +107,13 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
   - paper trading **≥ 14 days** diverges from backtest of the same period by **≤ 20%**;
   - not carried by 1–2 lucky windows or pairs.
 - [ ] `docs/reports/stage-1-go-no-go.md` (metrics, best pairs/params, risks, recommendation)
-- [ ] `/audit-risks` passed
+- [ ] `/audit-risks` passed (first run 2026-10-19: FIX BEFORE RELEASE, see `docs/reports/audits/2026-10-19-stage-1-mvp.md`)
+  - [ ] H1 chained OOS drawdown
+  - [ ] M1 intra-bar drawdown at candle low
+  - [ ] M2 paper restart duplicates (snapshot per fill batch, prune on resume)
+  - [ ] M3 gap backfill from last event + trailing minute
+  - [ ] M4 stopped sessions require explicit re-arm
+  - [ ] L1–L7 low findings
 - [ ] `docs/guides/stage-2-user-guide.md` (only if Go)
 - [ ] README updated (features, quick start, architecture, status badge) · `chore: complete stage 1` · tag `v0.1.0`
 
