@@ -46,13 +46,13 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
 - [x] Repositories (narrow interfaces) + integration tests
 
 ### 1.5 Exchange layer (multi-exchange ready)
-- [ ] Interfaces: `IRestMarketData`, `IWebSocketTicker`, `IOrderGateway`; `BaseExchangeAdapter`
-- [ ] `ExchangeRegistry` / factory: adapters registered by `ExchangeId`; active exchange chosen by
+- [x] Interfaces: `IRestMarketData`, `IWebSocketTicker`, `IOrderGateway`; `BaseExchangeAdapter`
+- [x] `ExchangeRegistry` / factory: adapters registered by `ExchangeId`; active exchange chosen by
       `EXCHANGE_ACTIVE`; per-exchange credentials (optional in Stage 1: public data only, fees from settings) and fee schedule in settings
-- [ ] Bybit V5 adapter: REST (instruments info, klines, tickers, orderbook top) via ccxt behind the interface
-- [ ] Bybit V5 public WebSocket (tickers/trades/kline) with reconnect, resubscribe, heartbeat, gap detection
-- [ ] Rate-limit handling (token bucket) + retries with backoff
-- [ ] Contract test suite every adapter must pass (so a 2nd exchange can be added without core changes)
+- [x] Bybit V5 adapter: REST (instruments info, klines, tickers with best bid/ask, account fee rate) via own `httpx` client
+- [x] Bybit V5 public WebSocket (public trades) with reconnect, resubscribe, heartbeat, silence watchdog, gap events
+- [x] Rate-limit handling (token bucket) + retries with backoff
+- [x] Contract test suite every adapter must pass (so a 2nd exchange can be added without core changes)
 
 ### 1.6 Market data collector
 - [ ] Historical candle loader (1m/5m) with checkpoints, resume, idempotent upserts

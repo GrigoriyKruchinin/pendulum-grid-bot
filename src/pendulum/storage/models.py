@@ -57,6 +57,7 @@ class InstrumentRow(Base):
     step_size: Mapped[Decimal] = mapped_column(Money)
     min_qty: Mapped[Decimal] = mapped_column(Money)
     min_notional: Mapped[Decimal] = mapped_column(Money)
+    risky: Mapped[bool] = mapped_column(server_default="false")
     updated_at: Mapped[datetime] = mapped_column(TsTz, server_default=func.now(), onupdate=func.now())
 
 

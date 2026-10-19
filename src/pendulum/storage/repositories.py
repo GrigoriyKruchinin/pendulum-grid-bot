@@ -210,6 +210,7 @@ class InstrumentRepository:
                     "step_size": i.filters.step_size,
                     "min_qty": i.filters.min_qty,
                     "min_notional": i.filters.min_notional,
+                    "risky": i.risky,
                 }
                 for i in instruments
             ]
@@ -222,6 +223,7 @@ class InstrumentRepository:
                 "step_size": stmt.excluded.step_size,
                 "min_qty": stmt.excluded.min_qty,
                 "min_notional": stmt.excluded.min_notional,
+                "risky": stmt.excluded.risky,
                 "updated_at": func.now(),
             },
         )
@@ -238,6 +240,7 @@ class InstrumentRepository:
             symbol=Symbol.parse(row.symbol),
             exchange_symbol=row.exchange_symbol,
             filters=MarketFilters(row.tick_size, row.step_size, row.min_qty, row.min_notional),
+            risky=row.risky,
         )
 
 

@@ -57,7 +57,7 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "PLR0915", "S105", "S106"]
+"tests/**" = ["S101", "PLR0915", "S105", "S106", "PT018"]
 "src/pendulum/storage/migrations/**" = ["N999"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]

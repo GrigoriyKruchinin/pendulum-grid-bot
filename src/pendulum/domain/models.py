@@ -108,6 +108,7 @@ class Instrument:
     symbol: Symbol
     exchange_symbol: str
     filters: MarketFilters
+    risky: bool = False  # exchange flags it as innovation-zone / special-treatment
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,6 +148,25 @@ class Ticker:
         if mid <= 0:
             return Decimal("Infinity")
         return (self.ask - self.bid) / mid * Decimal(10_000)
+
+
+@dataclass(frozen=True, slots=True)
+class TradeTick:
+    """A public trade print from the exchange stream."""
+
+    symbol: Symbol
+    ts: datetime
+    price: Decimal
+    qty: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class StreamGap:
+    """The live stream was interrupted between ``start`` and ``end`` (data may be missing)."""
+
+    symbol: Symbol
+    start: datetime
+    end: datetime
 
 
 @dataclass(slots=True)
