@@ -48,7 +48,7 @@ Current stage: **Stage 0** — waiting for the owner's "Start Implementation".
 ### 1.5 Exchange layer (multi-exchange ready)
 - [ ] Interfaces: `IRestMarketData`, `IWebSocketTicker`, `IOrderGateway`; `BaseExchangeAdapter`
 - [ ] `ExchangeRegistry` / factory: adapters registered by `ExchangeId`; active exchange chosen by
-      `EXCHANGE_ACTIVE`; per-exchange credentials and fee schedule in settings
+      `EXCHANGE_ACTIVE`; per-exchange credentials (optional in Stage 1: public data only, fees from settings) and fee schedule in settings
 - [ ] Bybit V5 adapter: REST (instruments info, klines, tickers, orderbook top) via ccxt behind the interface
 - [ ] Bybit V5 public WebSocket (tickers/trades/kline) with reconnect, resubscribe, heartbeat, gap detection
 - [ ] Rate-limit handling (token bucket) + retries with backoff
