@@ -132,7 +132,7 @@ Criteria: **unchanged** (same six backtest criteria + paper divergence), evaluat
 - [x] Regime filter (`IRegimeFilter`): rolling hourly efficiency ratio with hysteresis; grid liquidates to USDT
       when a trend starts and re-enters around the current price when the range returns
 - [x] Backtester supports re-entry after filter/stop exits; filter is a walk-forward parameter (`--grid regime`, 144 sets)
-- [ ] History extended to 2023-10-19 → 2026-10-19 (bull, bear and sideways phases)
+- [x] History extended to 2023-10-19 → 2026-10-19 (bull, bear and sideways phases; ENA since listing 2024-04-02)
 - [ ] Walk-forward on 10 pairs: filtered vs unfiltered on the same 3-year data
 - [ ] Iteration section in `docs/reports/stage-1-go-no-go.md`; decision Go / Iterate (last) / No-Go
 - [ ] Decision recorded: Go → Stage 2 · Iterate (max 1–2, goals + criteria added here) · No-Go → reposition as
