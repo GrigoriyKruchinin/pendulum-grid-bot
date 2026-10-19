@@ -105,10 +105,13 @@ async def test_trading_session_flow(db: Database) -> None:
     order.status = OrderStatus.FILLED
     order.filled_qty = Decimal(1)
     await repo.upsert_order(sid, order)
-    await repo.add_fill(
-        sid, Fill("pdl-1-b-3", Side.BUY, Decimal(100), Decimal(1), Decimal("0.1"), "USDT", T0)
-    )
-    await repo.add_cycle(sid, Cycle(3, Decimal(100), Decimal(102), Decimal(1), Decimal("0.2"), T0, T0 + M))
+    fill = Fill("pdl-1-b-3", Side.BUY, Decimal(100), Decimal(1), Decimal("0.1"), "USDT", T0)
+    assert await repo.add_fill(sid, fill)
+    assert not await repo.add_fill(sid, fill)  # replay is a no-op
+    cycle = Cycle(3, Decimal(100), Decimal(102), Decimal(1), Decimal("0.2"), T0, T0 + M)
+    await repo.add_cycle(sid, cycle)
+    await repo.add_cycle(sid, cycle)
+    assert await SessionReadRepository(db).cycle_stats(sid, T0) == (1, Decimal("1.8"))
     point = EquityPoint(T0, Decimal(50), Decimal("0.5"), Decimal(100))
     await repo.add_equity_point(sid, point)
     await repo.add_equity_point(sid, point)

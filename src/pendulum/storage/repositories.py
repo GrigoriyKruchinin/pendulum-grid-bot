@@ -368,39 +368,47 @@ class TradingSessionRepository:
         async with self._db.transaction() as session:
             await session.execute(stmt)
 
-    async def add_fill(self, session_id: int, fill: Fill) -> None:
-        """Record an execution."""
-        async with self._db.transaction() as session:
-            session.add(
-                FillRow(
-                    session_id=session_id,
-                    client_id=fill.client_id,
-                    side=fill.side.value,
-                    price=fill.price,
-                    qty=fill.qty,
-                    fee=fill.fee,
-                    fee_asset=fill.fee_asset,
-                    is_maker=fill.is_maker,
-                    ts=fill.ts,
-                )
+    async def add_fill(self, session_id: int, fill: Fill) -> bool:
+        """Record an execution; idempotent per ``(session_id, client_id)``."""
+        stmt = (
+            insert(FillRow)
+            .values(
+                session_id=session_id,
+                client_id=fill.client_id,
+                side=fill.side.value,
+                price=fill.price,
+                qty=fill.qty,
+                fee=fill.fee,
+                fee_asset=fill.fee_asset,
+                is_maker=fill.is_maker,
+                ts=fill.ts,
             )
+            .on_conflict_do_nothing(constraint="uq_fills_session_client")
+            .returning(FillRow.id)
+        )
+        async with self._db.transaction() as session:
+            inserted = await session.scalar(stmt)
+        return inserted is not None
 
     async def add_cycle(self, session_id: int, cycle: Cycle) -> None:
-        """Record a completed round trip."""
-        async with self._db.transaction() as session:
-            session.add(
-                CycleRow(
-                    session_id=session_id,
-                    level_index=cycle.level_index,
-                    buy_price=cycle.buy_price,
-                    sell_price=cycle.sell_price,
-                    qty=cycle.qty,
-                    fees_quote=cycle.fees_quote,
-                    net_profit=cycle.net_profit,
-                    opened_at=cycle.opened_at,
-                    closed_at=cycle.closed_at,
-                )
+        """Record a completed round trip (idempotent per slot and close time)."""
+        stmt = (
+            insert(CycleRow)
+            .values(
+                session_id=session_id,
+                level_index=cycle.level_index,
+                buy_price=cycle.buy_price,
+                sell_price=cycle.sell_price,
+                qty=cycle.qty,
+                fees_quote=cycle.fees_quote,
+                net_profit=cycle.net_profit,
+                opened_at=cycle.opened_at,
+                closed_at=cycle.closed_at,
             )
+            .on_conflict_do_nothing(constraint="uq_cycles_session_level_closed")
+        )
+        async with self._db.transaction() as session:
+            await session.execute(stmt)
 
     async def add_equity_point(self, session_id: int, point: EquityPoint) -> None:
         """Record an equity sample (idempotent per timestamp)."""

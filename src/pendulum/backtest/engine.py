@@ -88,6 +88,7 @@ class BacktestResult:
     stopped: bool
     buy_hold_return: Decimal
     error: str | None = None
+    # Sampled equity; a sample may be preceded by the trough since the previous sample (same timestamp).
     equity_curve: list[tuple[datetime, Decimal]] = field(default_factory=list)
 
     @property
@@ -230,6 +231,7 @@ class _Simulation:
         self.trader: GridTrader | None = None
         self.was_in_range = True
         self.peak = ZERO
+        self.trough_since_sample: Decimal | None = None
 
     def make_plan(self, price: Decimal, capital: Decimal) -> GridPlan:
         p = self.params
@@ -290,12 +292,20 @@ class _Simulation:
     def track_equity(self, candle: Candle, now: datetime, sample: bool) -> Decimal:
         equity = self.exchange.equity(candle.close)
         self.peak = max(self.peak, equity, self.exchange.equity(candle.high))
+        # The grid is long inventory, so the bar low is the intra-bar equity trough.
+        trough = min(equity, self.exchange.equity(candle.low))
         if self.peak > 0:
-            # The grid is long inventory, so the bar low is the intra-bar equity trough.
-            trough = min(equity, self.exchange.equity(candle.low))
             self.result.max_drawdown = max(self.result.max_drawdown, (self.peak - trough) / self.peak)
+        self.trough_since_sample = (
+            trough if self.trough_since_sample is None else min(self.trough_since_sample, trough)
+        )
         if sample:
+            # Keep the lowest equity since the previous sample so curve-based drawdowns (chained
+            # walk-forward) see intra-period troughs, not only the sampled closes.
+            if self.trough_since_sample < equity:
+                self.result.equity_curve.append((now, self.trough_since_sample))
             self.result.equity_curve.append((now, equity))
+            self.trough_since_sample = None
         return equity
 
     async def run(self, equity_sample: timedelta) -> BacktestResult:

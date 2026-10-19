@@ -58,6 +58,25 @@ class LoadReport:
         return 1 - self.missing_bars / self.expected_bars
 
 
+def _advance(
+    cp: Checkpoint | None, gap: Gap, batch_start: datetime, batch_end: datetime, step: timedelta
+) -> Checkpoint:
+    """Grow the attempted span only where it stays contiguous.
+
+    The checkpoint marks ``[first, last]`` as fully attempted (holes inside are exchange holes). A gap before
+    the span is merged only once it is finished; a batch after the span only if it starts right at its end.
+    Otherwise an interrupted run would hide the unfetched remainder as a hole.
+    """
+    if cp is None:
+        return Checkpoint(gap.start, batch_end)
+    first, last = cp.first_open_time, cp.last_open_time
+    if gap.start < first and batch_end >= gap.end and gap.end + step >= first:
+        first = gap.start
+    if batch_start <= last + step:
+        last = max(last, batch_end)
+    return Checkpoint(first, last)
+
+
 class HistoryLoader:
     """Loads and backfills candles for one exchange."""
 
@@ -145,11 +164,7 @@ class HistoryLoader:
                     if a <= c.open_time <= b
                 ]
                 report.fetched += await self._candles.upsert_candles(self._exchange, sym, timeframe, rows)
-                batch_end = batch[-1][1]
-                checkpoint = Checkpoint(
-                    min(checkpoint.first_open_time, gap.start) if checkpoint else gap.start,
-                    max(checkpoint.last_open_time, batch_end) if checkpoint else batch_end,
-                )
+                checkpoint = _advance(checkpoint, gap, batch[0][0], batch[-1][1], step)
                 await self._candles.save_checkpoint(self._exchange, sym, timeframe, checkpoint)
 
         report.remaining_gaps = await self._candles.find_gaps(

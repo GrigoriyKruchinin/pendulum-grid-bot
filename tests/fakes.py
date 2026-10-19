@@ -221,10 +221,15 @@ class InMemorySessionStore:
     async def upsert_order(self, session_id: int, order: Any) -> None:
         self.orders[order.client_id] = (order.status, order.filled_qty)
 
-    async def add_fill(self, session_id: int, fill: Any) -> None:
+    async def add_fill(self, session_id: int, fill: Any) -> bool:
+        if any(f.client_id == fill.client_id for f in self.fills):
+            return False
         self.fills.append(fill)
+        return True
 
     async def add_cycle(self, session_id: int, cycle: Any) -> None:
+        if any((c.level_index, c.closed_at) == (cycle.level_index, cycle.closed_at) for c in self.cycles):
+            return
         self.cycles.append(cycle)
 
     async def add_equity_point(self, session_id: int, point: Any) -> None:

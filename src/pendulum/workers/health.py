@@ -9,7 +9,8 @@ from pendulum.paper.session import MODE
 from pendulum.storage.db import Database
 from pendulum.storage.repositories import SessionReadRepository
 
-PAPER_STALE_AFTER = timedelta(minutes=5)
+STREAM_STALE_AFTER = timedelta(minutes=5)
+SYMBOL_STALE_AFTER = timedelta(minutes=60)
 
 
 async def paper_healthy() -> bool:
@@ -23,8 +24,12 @@ async def paper_healthy() -> bool:
         return True  # nothing to monitor (all pairs stopped or skipped); the process itself is alive
     now = datetime.now(UTC)
     for s in sessions:
-        marks = [s.state.get("heartbeat"), s.state.get("last_event")]
-        latest = max((datetime.fromisoformat(m) for m in marks if m), default=None)
-        if latest is None or now - latest > PAPER_STALE_AFTER:
+        # Stream liveness: the runner records when any trade last arrived (heartbeat snapshots carry it).
+        stream_at = s.state.get("stream_at")
+        if stream_at is None or now - datetime.fromisoformat(stream_at) > STREAM_STALE_AFTER:
+            return False
+        # A liquid pair silent this long on a live connection means a broken subscription.
+        last = s.state.get("last_event")
+        if last is None or now - datetime.fromisoformat(last) > SYMBOL_STALE_AFTER:
             return False
     return True

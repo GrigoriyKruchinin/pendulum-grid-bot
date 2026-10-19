@@ -114,6 +114,7 @@ Current stage: **Stage 1** (branch `stage-1-mvp`).
   - [x] M3 gap backfill from last event + trailing minute
   - [x] M4 stopped sessions require explicit re-arm
   - [x] L1–L7 low findings
+  - [x] Re-audit follow-ups N1–N6
 - [ ] `docs/guides/stage-2-user-guide.md` (only if Go)
 - [ ] README updated (features, quick start, architecture, status badge) · `chore: complete stage 1` · tag `v0.1.0`
 

@@ -168,6 +168,9 @@ class FillRow(Base):
     is_maker: Mapped[bool]
     ts: Mapped[datetime] = mapped_column(TsTz)
 
+    # Orders fill once (no partial fills in the virtual exchange); replays after a crash become no-ops.
+    __table_args__ = (UniqueConstraint("session_id", "client_id", name="uq_fills_session_client"),)
+
 
 class CycleRow(Base):
     """Completed buy/sell round trips."""
@@ -184,6 +187,10 @@ class CycleRow(Base):
     net_profit: Mapped[Decimal] = mapped_column(Money)
     opened_at: Mapped[datetime] = mapped_column(TsTz)
     closed_at: Mapped[datetime] = mapped_column(TsTz, index=True)
+
+    __table_args__ = (
+        UniqueConstraint("session_id", "level_index", "closed_at", name="uq_cycles_session_level_closed"),
+    )
 
 
 class EquityPointRow(Base):

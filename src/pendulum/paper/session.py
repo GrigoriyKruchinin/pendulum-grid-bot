@@ -85,6 +85,7 @@ class PaperSession:
         # snapshot consistent with the events already written.
         self.lock = asyncio.Lock()
         self.heartbeat_at: datetime = now
+        self.stream_at: datetime | None = None  # last message from the live stream (any symbol)
 
     # -- setup ------------------------------------------------------------------------------------
 
@@ -160,6 +161,7 @@ class PaperSession:
         self.gateway.last_price = Decimal(state["last_price"])
         self._next_persist = self.last_event
         self._orders = {o.client_id: o for o in self.exchange.open_orders()}
+        self._was_in_range = bool(state.get("was_in_range", True))
         plan = self.trader.plan
         await self.notifier.send(
             templates.paper_started(
@@ -209,10 +211,26 @@ class PaperSession:
                     await self.persist(close_time, force=True)
             await self.persist(self.last_event, force=True)
 
-    async def heartbeat(self, now: datetime) -> None:
-        """Periodic liveness mark and snapshot, also when a quiet pair has no trades."""
+    async def replay_candle(self, candle: Candle, timeframe: Timeframe = Timeframe.M1) -> None:
+        """Re-check one candle that partly overlaps live ticks (the reconnect minute after a gap).
+
+        Safe to replay: orders already filled by ticks are gone, and orders placed after the candle opened
+        are not eligible. ``last_event`` and the live reference price are left untouched.
+        """
+        async with self.lock:
+            if self.trader is None or not self.trader.active:
+                return
+            close_time = candle.open_time + timedelta(seconds=timeframe.seconds)
+            fills = self.exchange.match_candle(candle, close_time)
+            if fills:
+                await self._handle_fills(fills)
+                await self.persist(self.clock.now, force=True)
+
+    async def heartbeat(self, now: datetime, stream_at: datetime | None) -> None:
+        """Periodic snapshot that records when the market data stream last delivered anything."""
         async with self.lock:
             self.heartbeat_at = now
+            self.stream_at = stream_at
             if (
                 self.session_id is not None
                 and self.trader is not None
@@ -238,6 +256,8 @@ class PaperSession:
         if not fills or self.trader is None or self.session_id is None:
             return
         for fill in fills:
+            # Fill and cycle writes are idempotent, so replaying events already written before a crash
+            # advances state without recording them twice.
             await self.store.add_fill(self.session_id, fill)
             order = self._orders.pop(fill.client_id, None)
             if order is not None:
@@ -297,6 +317,8 @@ class PaperSession:
             "start_price": str(self.start_price),
             "equity": str(self.exchange.equity(price)),
             "heartbeat": self.heartbeat_at.isoformat(),
+            "stream_at": self.stream_at.isoformat() if self.stream_at else None,
+            "was_in_range": self._was_in_range,
         }
 
     async def persist(self, now: datetime, *, force: bool = False) -> None:

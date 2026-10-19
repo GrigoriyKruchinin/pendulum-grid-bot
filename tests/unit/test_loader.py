@@ -1,5 +1,7 @@
 from datetime import UTC, datetime, timedelta
 
+import pytest
+
 from pendulum.domain.models import Symbol, Timeframe
 from pendulum.market_data.loader import HistoryLoader, floor_time, last_closed_open_time
 from tests.fakes import FakeAdapter, FakeRest, InMemoryCandleStore, InMemoryInstrumentStore
@@ -63,3 +65,32 @@ async def test_backfill_earlier_period() -> None:
     rest.calls.clear()
     await loader.load(SOL, Timeframe.M1, T0)
     assert rest.calls == [(T0, T0 + 4 * M)]
+
+
+async def test_interrupted_backfill_does_not_hide_unfetched_span() -> None:
+    rest = FakeRest(Timeframe.M1, limit=3)
+    loader, store = _loader(rest, now=T0 + 20 * M)
+    loader._concurrency = 1
+    await loader.load(SOL, Timeframe.M1, T0 + 10 * M)  # loads 10..19, checkpoint [10, 19]
+
+    class FetchError(Exception):
+        pass
+
+    original = rest.fetch_candles
+    calls = 0
+
+    async def flaky(*args: object) -> list:  # type: ignore[type-arg]
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise FetchError
+        return await original(*args)  # type: ignore[arg-type]
+
+    rest.fetch_candles = flaky  # type: ignore[method-assign,assignment]
+    with pytest.raises(FetchError):
+        await loader.load(SOL, Timeframe.M1, T0)  # gap 0..9 interrupted after the first batch
+    cp = store.checkpoints[("fake", "SOL/USDT", Timeframe.M1)]
+    assert cp.first_open_time == T0 + 10 * M  # unfinished earlier gap not merged
+    rest.fetch_candles = original  # type: ignore[method-assign]
+    report = await loader.load(SOL, Timeframe.M1, T0)
+    assert report.missing_bars == 0

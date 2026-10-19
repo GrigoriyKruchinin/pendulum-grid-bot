@@ -197,5 +197,22 @@ async def test_fills_force_snapshot_and_heartbeat() -> None:
     await s.open_new(Decimal(100), T0)
     await s.on_trade(_tick(1, "94.9"))  # fill within the persist interval
     assert store.sessions[1]["state"]["last_event"] == (T0 + S).isoformat()
-    await s.heartbeat(T0 + timedelta(minutes=3))
+    await s.heartbeat(T0 + timedelta(minutes=3), T0 + timedelta(minutes=2))
     assert store.sessions[1]["state"]["heartbeat"] == (T0 + timedelta(minutes=3)).isoformat()
+
+
+async def test_reconnect_minute_is_replayed_and_range_flag_persisted() -> None:
+    rest = _rest()
+    events: list[TradeTick | StreamGap] = [
+        _tick(1, "100"),
+        StreamGap(SOL.symbol, T0 + 2 * S, T0 + timedelta(seconds=150)),  # reconnect at 00:02:30
+        _tick(160, "100"),  # same minute: no replay yet
+        _tick(185, "100"),  # 00:03:05, reconnect minute closed -> replay 00:02 candle
+    ]
+    store, notifier = InMemorySessionStore(), NullNotifier()
+    runner = _runner(rest, store, notifier, events=events)
+    await runner.run()
+    minute = T0 + timedelta(minutes=2)
+    assert (minute, minute) in rest.calls
+    state = store.sessions[1]["state"]
+    assert state["was_in_range"] is True

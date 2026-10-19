@@ -63,7 +63,8 @@ class PaperRunner:
         self.rearm_stopped = rearm_stopped
         self.heartbeat_every = heartbeat_every
         self.sessions: dict[Symbol, PaperSession] = {}
-        self._pending_gap: set[Symbol] = set()
+        self._pending_gap: dict[Symbol, datetime] = {}  # symbol -> gap end (reconnect time)
+        self.stream_at: datetime | None = None
 
     async def setup(self) -> list[Instrument]:
         """Resume running sessions or open new ones at the current price."""
@@ -157,15 +158,23 @@ class PaperRunner:
         if session is None:
             return
         if isinstance(event, TradeTick):
-            if event.symbol in self._pending_gap:
-                # Replay everything since the last processed event, through the minute before this tick.
-                self._pending_gap.discard(event.symbol)
-                await self.backfill(session, session.last_event, event.ts)
+            self.stream_at = self._now()
+            gap_end = self._pending_gap.get(event.symbol)
+            if gap_end is not None and floor_time(event.ts, Timeframe.M1) > floor_time(gap_end, Timeframe.M1):
+                # The reconnect minute has closed: replay it to cover trades before the first live tick.
+                del self._pending_gap[event.symbol]
+                minute = floor_time(gap_end, Timeframe.M1)
+                candles = await self.adapter.rest.fetch_candles(
+                    session.instrument, Timeframe.M1, minute, minute
+                )
+                for candle in candles:
+                    if candle.open_time == minute:
+                        await session.replay_candle(candle)
             await session.on_trade(event)
         else:
             # Disconnect detection lags the outage: backfill from the last processed event, not gap start.
             await self.backfill(session, session.last_event, event.end)
-            self._pending_gap.add(event.symbol)
+            self._pending_gap[event.symbol] = event.end
 
     async def run(self) -> None:
         """Run until cancelled."""
@@ -179,7 +188,7 @@ class PaperRunner:
                 await self.dispatch(event)
         finally:
             heartbeat.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await heartbeat
 
     async def _heartbeat_loop(self) -> None:
@@ -187,4 +196,7 @@ class PaperRunner:
             await asyncio.sleep(self.heartbeat_every)
             now = self._now()
             for session in self.sessions.values():
-                await session.heartbeat(now)
+                try:
+                    await session.heartbeat(now, self.stream_at)
+                except Exception:  # a failed snapshot must not kill the heartbeat
+                    log.exception("paper_heartbeat_failed", symbol=session.symbol)
