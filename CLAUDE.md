@@ -47,6 +47,7 @@ make test         # pytest
 make check        # lint + typecheck + test
 make up / down    # docker compose -f docker-compose.local.yml up -d / down
 make migrate      # alembic upgrade head (in migrations container)
+make data-load ARGS="..."  # load historical candles
 make backtest ARGS="..."   # run backtester CLI
 docker compose -f docker-compose.local.yml config   # validate compose after infra changes
 ```

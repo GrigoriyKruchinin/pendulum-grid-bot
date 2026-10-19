@@ -14,7 +14,7 @@ Current stage: **Stage 0** — waiting for the owner's "Start Implementation".
 - [x] `todo.md` with Stages 1–3
 - [x] Git: `.gitignore` (project additions), `.env.example`, `origin` connected, first commit + push
 - [x] `README.md` header + `docs/assets/logo.svg`
-- [ ] `docs/guides/stage-1-user-guide.md`
+- [x] `docs/guides/stage-1-user-guide.md`
 - [ ] Owner says "Start Implementation"
 
 ---
@@ -24,7 +24,7 @@ Current stage: **Stage 0** — waiting for the owner's "Start Implementation".
 ### 1.1 Project skeleton
 - [ ] `pyproject.toml` (uv, Python 3.12), `uv.lock`, src layout `src/pendulum/`
 - [ ] ruff + mypy strict + pytest/pytest-asyncio/hypothesis config
-- [ ] `Makefile` (install, lint, format, typecheck, test, check, up, down, migrate, backtest)
+- [ ] `Makefile` (install, lint, format, typecheck, test, check, up, down, migrate, data-load, backtest)
 - [ ] Structured logging with secret redaction
 - [ ] Multi-stage `Dockerfile` (non-root user, uv cache)
 
